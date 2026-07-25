@@ -23,4 +23,12 @@ public static class ChatService
     {
         return client.CompleteChat(chatMessages, options);
     }
+
+    public static async IAsyncEnumerable<StreamingChatCompletionUpdate> GetCompletionStreaming(ChatClient client, List<ChatMessage> chatMessages, ChatCompletionOptions options)
+    {
+        await foreach (var update in client.CompleteChatStreamingAsync(chatMessages, options))
+        {
+            yield return update;
+        }
+    }
 }

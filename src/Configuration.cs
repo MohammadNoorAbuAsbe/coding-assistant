@@ -37,4 +37,24 @@ public static class Configuration
         }
         return Environment.GetEnvironmentVariable("OPENROUTER_MODEL") ?? "anthropic/claude-haiku-4.5";
     }
+
+    public static int GetMaxIterations()
+    {
+        var value = Environment.GetEnvironmentVariable("MAX_ITERATIONS");
+        return int.TryParse(value, out var result) ? result : 20;
+    }
+
+    public static int GetContextWindowSize()
+    {
+        var value = Environment.GetEnvironmentVariable("CONTEXT_WINDOW_SIZE");
+        if (int.TryParse(value, out var result)) return result;
+        return GetProvider() == "ollama" ? 4096 : 128000;
+    }
+
+    public static int GetMaxToolResultTokens()
+    {
+        var value = Environment.GetEnvironmentVariable("MAX_TOOL_RESULT_TOKENS");
+        if (int.TryParse(value, out var result)) return result;
+        return (int)(GetContextWindowSize() * 0.4);
+    }
 }

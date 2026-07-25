@@ -12,4 +12,4 @@ if (string.IsNullOrEmpty(prompt))
     throw new Exception("Prompt must not be empty");
 }
 
-ChatOrchestrator.Run(prompt);
+await ChatOrchestrator.Run(prompt);
