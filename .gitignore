@@ -1,0 +1,41 @@
+# Build outputs
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+
+# IDE files
+.vs/
+.idea/
+*.user
+*.suo
+*.sln.iml
+
+# NuGet
+*.nupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+*.nuget.props
+*.nuget.targets
+
+# Environment / secrets
+.env
+.env.*
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+*.binlog
+
+# Test results
+[Tt]est[Rr]esult*/
+test-results/
+
+# Misc
+~$*
+*~
