@@ -76,7 +76,7 @@ public static class ContextManager
         return content.Substring(0, maxChars) + "\n\n... [truncated, content exceeded token limit]";
     }
 
-    private static string ExtractText(ChatMessageContent content)
+    public static string ExtractText(ChatMessageContent content)
     {
         var parts = new List<string>();
         for (int i = 0; i < content.Count; i++)

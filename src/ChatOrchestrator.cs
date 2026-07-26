@@ -11,9 +11,19 @@ public static class ChatOrchestrator
         var provider = Configuration.GetProvider();
         var maxIterations = Configuration.GetMaxIterations();
         var contextWindowSize = Configuration.GetContextWindowSize();
-
         var systemMessage = new SystemChatMessage(SystemPrompt.GetPrompt(provider));
         List<ChatMessage> messages = [systemMessage, new UserChatMessage(prompt)];
+
+        Console.Error.WriteLine("=== VERBOSE MODE ===");
+        Console.Error.WriteLine($"Provider: {provider}");
+        Console.Error.WriteLine($"Model: {Configuration.GetModel()}");
+        Console.Error.WriteLine($"Context window: {contextWindowSize} tokens");
+        Console.Error.WriteLine($"Max tool result tokens: {Configuration.GetMaxToolResultTokens()}");
+        Console.Error.WriteLine($"Max iterations: {maxIterations}");
+        Console.Error.WriteLine($"System prompt length: {ContextManager.EstimateTokens(SystemPrompt.GetPrompt(provider))} tokens");
+        Console.Error.WriteLine($"User prompt: {prompt}");
+        Console.Error.WriteLine($"User prompt tokens: {ContextManager.EstimateTokens(prompt)}");
+        Console.Error.WriteLine("===================");
 
         for (int iteration = 0; iteration < maxIterations; iteration++)
         {
@@ -26,6 +36,15 @@ public static class ChatOrchestrator
                 if (!string.IsNullOrEmpty(responseContent))
                     Console.WriteLine();
                 break;
+            }
+
+            Console.Error.WriteLine($"\n--- Tool Calls ({accumulatedToolCalls.Count}) ---");
+            foreach (var acc in accumulatedToolCalls.Values)
+            {
+                Console.Error.WriteLine($"  Tool: {acc.FunctionName}");
+                Console.Error.WriteLine($"  ID: {acc.Id}");
+                Console.Error.WriteLine($"  Args: {acc.Arguments}");
+                Console.Error.WriteLine("  ---");
             }
 
             messages = FinalizeToolCalls(accumulatedToolCalls, messages, contextWindowSize);
@@ -97,9 +116,43 @@ public static class ChatOrchestrator
         messages.Add(new AssistantChatMessage(assistantToolCalls));
 
         var toolResultMessages = ResponseHandler.ProcessToolCalls(assistantToolCalls);
+
+        Console.Error.WriteLine($"\n--- Tool Results ({toolResultMessages.Count}) ---");
+        foreach (var msg in toolResultMessages)
+        {
+            if (msg is ToolChatMessage toolMsg)
+            {
+                string content = ContextManager.ExtractText(toolMsg.Content);
+                int tokens = ContextManager.EstimateTokens(content);
+                Console.Error.WriteLine($"  Tool Call ID: {toolMsg.ToolCallId}");
+                Console.Error.WriteLine($"  Result ({tokens} tokens): {content[..Math.Min(200, content.Length)]}{(content.Length > 200 ? "..." : "")}");
+                Console.Error.WriteLine("  ---");
+            }
+        }
+
         messages.AddRange(toolResultMessages);
 
-        return ContextManager.TruncateMessages(messages, contextWindowSize);
+        int totalTokens = 0;
+        var truncated = ContextManager.TruncateMessages(messages, contextWindowSize);
+
+        Console.Error.WriteLine($"\n--- Message Summary ({truncated.Count} messages) ---");
+        for (int i = 0; i < truncated.Count; i++)
+        {
+            var msg = truncated[i];
+            int tokens = ContextManager.EstimateMessageTokens(msg);
+            totalTokens += tokens;
+            string typeName = msg.GetType().Name;
+            string preview = "";
+            if (msg is UserChatMessage u) preview = ContextManager.ExtractText(u.Content)[..Math.Min(50, ContextManager.ExtractText(u.Content).Length)];
+            else if (msg is AssistantChatMessage a && a.Content != null) preview = ContextManager.ExtractText(a.Content)[..Math.Min(50, ContextManager.ExtractText(a.Content).Length)];
+            else if (msg is ToolChatMessage t) preview = $"[tool result: {ContextManager.ExtractText(t.Content)[..Math.Min(50, ContextManager.ExtractText(t.Content).Length)]}]";
+
+            Console.Error.WriteLine($"  [{i}] {typeName} ({tokens} tok): {preview}...");
+        }
+        Console.Error.WriteLine($"  Total estimated tokens: {totalTokens} / {contextWindowSize}");
+        Console.Error.WriteLine("====================\n");
+
+        return truncated;
     }
 }
 

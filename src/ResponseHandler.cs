@@ -49,7 +49,8 @@ public static class ResponseHandler
             ToolHandler.ReadFunctionName => ProcessReadFileCall(toolCall),
             ToolHandler.WriteFunctionName => ProcessWriteFileCall(toolCall),
             ToolHandler.BashFunctionName => ProcessBashCall(toolCall),
-            _ => CreateErrorResult(toolCall, $"Error: unknown function '{toolCall.FunctionName}'. Available functions: {ToolHandler.ReadFunctionName}, {ToolHandler.WriteFunctionName}, {ToolHandler.BashFunctionName}.")
+            ToolHandler.GrepFunctionName => ProcessGrepCall(toolCall),
+            _ => CreateErrorResult(toolCall, $"Error: unknown function '{toolCall.FunctionName}'. Available functions: {ToolHandler.ReadFunctionName}, {ToolHandler.WriteFunctionName}, {ToolHandler.BashFunctionName}, {ToolHandler.GrepFunctionName}.")
         };
     }
 
@@ -204,5 +205,187 @@ public static class ResponseHandler
         {
             return CreateErrorResult(toolCall, $"Error executing command '{bashCall.command}': {ex.Message}");
         }
+    }
+
+    private static ToolChatMessage? ProcessGrepCall(ChatToolCall toolCall)
+    {
+        if (toolCall.FunctionArguments == null)
+        {
+            return CreateErrorResult(toolCall, "Error: Grep tool called with no arguments. Expected format: {\"pattern\": \"<regex>\"}");
+        }
+
+        ToolHandler.GrepCall? grepCall;
+        try
+        {
+            grepCall = toolCall.FunctionArguments.ToObjectFromJson<ToolHandler.GrepCall>(JsonOptions);
+        }
+        catch (JsonException ex)
+        {
+            return CreateErrorResult(toolCall, $"Error: invalid JSON in Grep tool arguments: {ex.Message}. Expected format: {{\"pattern\": \"<regex>\"}}");
+        }
+
+        if (grepCall?.pattern == null)
+        {
+            return CreateErrorResult(toolCall, "Error: Grep tool missing required parameter 'pattern'.");
+        }
+
+        try
+        {
+            string rgPath = FindRipgrep() ?? "";
+            if (string.IsNullOrEmpty(rgPath))
+            {
+                return CreateErrorResult(toolCall, "Error: ripgrep (rg) not found. Install it with: winget install BurntSushi.ripgrep.MSVC");
+            }
+
+            string arguments = BuildRipgrepArguments(grepCall);
+
+            var processStartInfo = new ProcessStartInfo
+            {
+                FileName = rgPath,
+                Arguments = arguments,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WorkingDirectory = Environment.CurrentDirectory
+            };
+
+            using var process = new Process { StartInfo = processStartInfo };
+            process.Start();
+
+            string stdout = process.StandardOutput.ReadToEnd();
+            string stderr = process.StandardError.ReadToEnd();
+
+            bool finished = process.WaitForExit(10000);
+
+            if (!finished)
+            {
+                process.Kill();
+                return CreateErrorResult(toolCall, "Error: ripgrep search timed out after 10 seconds. Try a more specific pattern or path.");
+            }
+
+            if (process.ExitCode == 2)
+            {
+                return CreateErrorResult(toolCall, $"Error: ripgrep invalid pattern '{grepCall.pattern}': {stderr}");
+            }
+
+            string result;
+            if (string.IsNullOrWhiteSpace(stdout))
+            {
+                result = $"No matches found for pattern: {grepCall.pattern}";
+            }
+            else
+            {
+                string[] lines = stdout.Trim().Split('\n');
+                if (lines.Length > 100)
+                {
+                    result = string.Join("\n", lines.Take(100)) + $"\n\n... [showing 100 of {lines.Length} matches, refine your pattern to narrow results]";
+                }
+                else
+                {
+                    result = stdout.Trim();
+                }
+            }
+
+            int maxTokens = Configuration.GetMaxToolResultTokens();
+            result = ContextManager.TruncateToolResult(result, maxTokens);
+
+            return new ToolChatMessage(toolCall.Id, result);
+        }
+        catch (Exception ex)
+        {
+            return CreateErrorResult(toolCall, $"Error running ripgrep: {ex.Message}");
+        }
+    }
+
+    private static string? FindRipgrep()
+    {
+        bool isWindows = OperatingSystem.IsWindows();
+        string executableName = isWindows ? "rg.exe" : "rg";
+
+        string? pathEnv = Environment.GetEnvironmentVariable("PATH");
+        if (!string.IsNullOrEmpty(pathEnv))
+        {
+            foreach (string dir in pathEnv.Split(Path.PathSeparator))
+            {
+                string fullPath = Path.Combine(dir, executableName);
+                if (File.Exists(fullPath))
+                {
+                    return fullPath;
+                }
+            }
+        }
+
+        if (isWindows)
+        {
+            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string[] knownPaths =
+            [
+                Path.Combine(localAppData, @"Microsoft\WinGet\Packages"),
+                Path.Combine(localAppData, @"Programs\ripgrep"),
+                @"C:\Program Files\ripgrep",
+                @"C:\Program Files (x86)\ripgrep"
+            ];
+
+            foreach (string basePath in knownPaths)
+            {
+                if (Directory.Exists(basePath))
+                {
+                    try
+                    {
+                        var found = Directory.EnumerateFiles(basePath, executableName, SearchOption.AllDirectories)
+                            .FirstOrDefault();
+                        if (found != null) return found;
+                    }
+                    catch { /* skip permission errors */ }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static string BuildRipgrepArguments(ToolHandler.GrepCall grepCall)
+    {
+        var args = new List<string>();
+
+        args.Add("--max-count");
+        args.Add("50");
+        args.Add("--max-columns");
+        args.Add("200");
+        args.Add("--max-columns-preview");
+        args.Add("-n");
+
+        if (string.Equals(grepCall.case_insensitive, "true", StringComparison.OrdinalIgnoreCase))
+        {
+            args.Add("-i");
+        }
+
+        if (!string.IsNullOrEmpty(grepCall.context_lines) && int.TryParse(grepCall.context_lines, out int ctx) && ctx > 0)
+        {
+            args.Add("-C");
+            args.Add(ctx.ToString());
+        }
+
+        if (!string.IsNullOrEmpty(grepCall.exclude))
+        {
+            args.Add("--glob");
+            args.Add($"!{grepCall.exclude}");
+        }
+
+        if (!string.IsNullOrEmpty(grepCall.include))
+        {
+            args.Add("--glob");
+            args.Add(grepCall.include);
+        }
+
+        args.Add($"\"{grepCall.pattern}\"");
+
+        if (!string.IsNullOrEmpty(grepCall.path))
+        {
+            args.Add($"\"{grepCall.path}\"");
+        }
+
+        return string.Join(" ", args);
     }
 }
