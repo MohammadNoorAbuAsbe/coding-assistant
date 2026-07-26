@@ -12,57 +12,22 @@ public static class ToolHandler
     private const string ReadFunctionDescription = "Read and return the contents of a file";
     private const string WriteFunctionDescription = "Write content to a file";
     private const string BashFunctionDescription = "Execute a shell command";
+    private const string FilePathPropertyName = "file_path";
 
 
-    public static ChatTool CreateReadTool()
-    {
-        return ChatTool.CreateFunctionTool(
-            ReadFunctionName,
-            ReadFunctionDescription,
-            CreateFunctionParameters(["file_path"], new
-            {
-                file_path = new
-                {
-                    type = "string",
-                    description = "The path to the file to read"
-                }
-            }));
-    }
+    public static ChatTool CreateReadTool() =>
+        CreateTool(ReadFunctionName, ReadFunctionDescription, [FilePathPropertyName],
+            StringProperties((FilePathPropertyName, "The path to the file to read")));
 
-    public static ChatTool CreateWriteTool()
-    {
-        return ChatTool.CreateFunctionTool(
-            WriteFunctionName,
-            WriteFunctionDescription,
-            CreateFunctionParameters(["file_path", "content"], new
-            {
-                file_path = new
-                {
-                    type = "string",
-                    description = "The path of the file to write to"
-                },
-                content = new
-                {
-                    type = "string",
-                    description = "The content to write to the file"
-                }
-            }));
-    }
+    public static ChatTool CreateWriteTool() =>
+        CreateTool(WriteFunctionName, WriteFunctionDescription, [FilePathPropertyName, "content"],
+            StringProperties(
+                (FilePathPropertyName, "The path of the file to write to"),
+                ("content", "The content to write to the file")));
 
-    public static ChatTool CreateBashTool()
-    {
-        return ChatTool.CreateFunctionTool(
-            BashFunctionName,
-            BashFunctionDescription,
-            CreateFunctionParameters(["command"], new
-            {
-                command = new
-                {
-                    type = "string",
-                    description = "The command to execute"
-                }
-            }));
-    }
+    public static ChatTool CreateBashTool() =>
+        CreateTool(BashFunctionName, BashFunctionDescription, ["command"],
+            StringProperties(("command", "The command to execute")));
 
     public static ChatCompletionOptions CreateCompletionOptions()
     {
@@ -77,6 +42,9 @@ public static class ToolHandler
         };
     }
 
+    private static ChatTool CreateTool(string name, string description, string[] required, object properties) =>
+        ChatTool.CreateFunctionTool(name, description, CreateFunctionParameters(required, properties));
+
     private static BinaryData CreateFunctionParameters(string[] required, object properties)
     {
         return BinaryData.FromObjectAsJson(new
@@ -86,6 +54,13 @@ public static class ToolHandler
             properties
         });
     }
+
+    private static Dictionary<string, object> StringProperties(params (string name, string description)[] props) =>
+        props.ToDictionary(p => p.name, p => (object)new Dictionary<string, object>
+        {
+            ["type"] = "string",
+            ["description"] = p.description
+        });
 
     public class ReadFileCall
     {
