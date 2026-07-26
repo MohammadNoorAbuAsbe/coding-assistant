@@ -61,24 +61,32 @@ public static class ResponseHandler
         return new ToolChatMessage(toolCall.Id, errorMessage);
     }
 
-    private static ToolChatMessage? ProcessReadFileCall(ChatToolCall toolCall)
+    private static T? ValidateAndDeserialize<T>(ChatToolCall toolCall) where T : class
     {
         if (toolCall.FunctionArguments == null)
         {
-            return CreateErrorResult(toolCall, "Error: Read tool called with no arguments. Expected format: {\"file_path\": \"<path>\"}");
+            return null;
         }
 
-        ToolHandler.ReadFileCall? readFileCall;
         try
         {
-            readFileCall = toolCall.FunctionArguments.ToObjectFromJson<ToolHandler.ReadFileCall>(JsonOptions);
+            return toolCall.FunctionArguments.ToObjectFromJson<T>(JsonOptions);
         }
-        catch (JsonException ex)
+        catch (JsonException)
         {
-            return CreateErrorResult(toolCall, $"Error: invalid JSON in Read tool arguments: {ex.Message}. Expected format: {{\"file_path\": \"<path>\"}}");
+            return null;
+        }
+    }
+
+    private static ToolChatMessage? ProcessReadFileCall(ChatToolCall toolCall)
+    {
+        var readFileCall = ValidateAndDeserialize<ToolHandler.ReadFileCall>(toolCall);
+        if (readFileCall == null)
+        {
+            return CreateErrorResult(toolCall, "Error: Read tool called with invalid arguments. Expected format: {\"file_path\": \"<path>\"}");
         }
 
-        if (readFileCall?.file_path == null)
+        if (readFileCall.file_path == null)
         {
             return CreateErrorResult(toolCall, "Error: Read tool missing required parameter 'file_path'. Expected format: {\"file_path\": \"<path>\"}");
         }
@@ -98,27 +106,18 @@ public static class ResponseHandler
 
     private static ToolChatMessage? ProcessWriteFileCall(ChatToolCall toolCall)
     {
-        if (toolCall.FunctionArguments == null)
+        var writeFileCall = ValidateAndDeserialize<ToolHandler.WriteFileCall>(toolCall);
+        if (writeFileCall == null)
         {
-            return CreateErrorResult(toolCall, "Error: Write tool called with no arguments. Expected format: {\"file_path\": \"<path>\", \"content\": \"<content>\"}");
+            return CreateErrorResult(toolCall, "Error: Write tool called with invalid arguments. Expected format: {\"file_path\": \"<path>\", \"content\": \"<content>\"}");
         }
 
-        ToolHandler.WriteFileCall? writeFileCall;
-        try
-        {
-            writeFileCall = toolCall.FunctionArguments.ToObjectFromJson<ToolHandler.WriteFileCall>(JsonOptions);
-        }
-        catch (JsonException ex)
-        {
-            return CreateErrorResult(toolCall, $"Error: invalid JSON in Write tool arguments: {ex.Message}. Expected format: {{\"file_path\": \"<path>\", \"content\": \"<content>\"}}");
-        }
-
-        if (writeFileCall?.file_path == null)
+        if (writeFileCall.file_path == null)
         {
             return CreateErrorResult(toolCall, "Error: Write tool missing required parameter 'file_path'.");
         }
 
-        if (writeFileCall?.content == null)
+        if (writeFileCall.content == null)
         {
             return CreateErrorResult(toolCall, "Error: Write tool missing required parameter 'content'.");
         }
@@ -142,32 +141,23 @@ public static class ResponseHandler
 
     private static ToolChatMessage? ProcessEditFileCall(ChatToolCall toolCall)
     {
-        if (toolCall.FunctionArguments == null)
+        var editCall = ValidateAndDeserialize<ToolHandler.EditFileCall>(toolCall);
+        if (editCall == null)
         {
-            return CreateErrorResult(toolCall, "Error: Edit tool called with no arguments. Expected format: {\"file_path\": \"<path>\", \"old_string\": \"<text>\", \"new_string\": \"<text>\"}");
+            return CreateErrorResult(toolCall, "Error: Edit tool called with invalid arguments. Expected format: {\"file_path\": \"<path>\", \"old_string\": \"<text>\", \"new_string\": \"<text>\"}");
         }
 
-        ToolHandler.EditFileCall? editCall;
-        try
-        {
-            editCall = toolCall.FunctionArguments.ToObjectFromJson<ToolHandler.EditFileCall>(JsonOptions);
-        }
-        catch (JsonException ex)
-        {
-            return CreateErrorResult(toolCall, $"Error: invalid JSON in Edit tool arguments: {ex.Message}. Expected format: {{\"file_path\": \"<path>\", \"old_string\": \"<text>\", \"new_string\": \"<text>\"}}");
-        }
-
-        if (editCall?.file_path == null)
+        if (editCall.file_path == null)
         {
             return CreateErrorResult(toolCall, "Error: Edit tool missing required parameter 'file_path'.");
         }
 
-        if (editCall?.old_string == null)
+        if (editCall.old_string == null)
         {
             return CreateErrorResult(toolCall, "Error: Edit tool missing required parameter 'old_string'.");
         }
 
-        if (editCall?.new_string == null)
+        if (editCall.new_string == null)
         {
             return CreateErrorResult(toolCall, "Error: Edit tool missing required parameter 'new_string'.");
         }
@@ -181,22 +171,17 @@ public static class ResponseHandler
 
             string content = System.IO.File.ReadAllText(editCall.file_path);
 
-            int firstIndex = content.IndexOf(editCall.old_string, StringComparison.Ordinal);
-            if (firstIndex == -1)
+            var match = FindBestMatch(content, editCall.old_string);
+            if (match == null)
             {
-                return CreateErrorResult(toolCall, $"Error: Edit tool could not find the specified 'old_string' in '{editCall.file_path}'. Ensure the exact text (including whitespace) matches.");
+                return CreateErrorResult(toolCall, $"Error: Edit tool could not find the specified 'old_string' in '{editCall.file_path}'. Ensure the text matches content in the file.");
             }
 
-            int lastIndex = content.LastIndexOf(editCall.old_string, StringComparison.Ordinal);
-            if (firstIndex != lastIndex)
-            {
-                return CreateErrorResult(toolCall, $"Error: Edit tool found multiple occurrences of 'old_string' in '{editCall.file_path}'. Provide more surrounding context in 'old_string' to identify the correct match.");
-            }
-
-            string newContent = content.Replace(editCall.old_string, editCall.new_string);
+            string newContent = content.Substring(0, match.Index) + editCall.new_string + content.Substring(match.Index + match.Length);
             System.IO.File.WriteAllText(editCall.file_path, newContent);
 
-            return new ToolChatMessage(toolCall.Id, $"Successfully edited {editCall.file_path} (replaced 1 occurrence).");
+            string note = match.Strategy == MatchStrategy.Exact ? "" : $" (matched using {match.Strategy} comparison)";
+            return new ToolChatMessage(toolCall.Id, $"Successfully edited {editCall.file_path}{note}.");
         }
         catch (Exception ex)
         {
@@ -206,22 +191,13 @@ public static class ResponseHandler
 
     private static ToolChatMessage? ProcessBashCall(ChatToolCall toolCall)
     {
-        if (toolCall.FunctionArguments == null)
+        var bashCall = ValidateAndDeserialize<ToolHandler.BashCommandCall>(toolCall);
+        if (bashCall == null)
         {
-            return CreateErrorResult(toolCall, "Error: Bash tool called with no arguments. Expected format: {\"command\": \"<command>\"}");
+            return CreateErrorResult(toolCall, "Error: Bash tool called with invalid arguments. Expected format: {\"command\": \"<command>\"}");
         }
 
-        ToolHandler.BashCommandCall? bashCall;
-        try
-        {
-            bashCall = toolCall.FunctionArguments.ToObjectFromJson<ToolHandler.BashCommandCall>(JsonOptions);
-        }
-        catch (JsonException ex)
-        {
-            return CreateErrorResult(toolCall, $"Error: invalid JSON in Bash tool arguments: {ex.Message}. Expected format: {{\"command\": \"<command>\"}}");
-        }
-
-        if (bashCall?.command == null)
+        if (bashCall.command == null)
         {
             return CreateErrorResult(toolCall, "Error: Bash tool missing required parameter 'command'.");
         }
@@ -274,22 +250,13 @@ public static class ResponseHandler
 
     private static ToolChatMessage? ProcessGrepCall(ChatToolCall toolCall)
     {
-        if (toolCall.FunctionArguments == null)
+        var grepCall = ValidateAndDeserialize<ToolHandler.GrepCall>(toolCall);
+        if (grepCall == null)
         {
-            return CreateErrorResult(toolCall, "Error: Grep tool called with no arguments. Expected format: {\"pattern\": \"<regex>\"}");
+            return CreateErrorResult(toolCall, "Error: Grep tool called with invalid arguments. Expected format: {\"pattern\": \"<regex>\"}");
         }
 
-        ToolHandler.GrepCall? grepCall;
-        try
-        {
-            grepCall = toolCall.FunctionArguments.ToObjectFromJson<ToolHandler.GrepCall>(JsonOptions);
-        }
-        catch (JsonException ex)
-        {
-            return CreateErrorResult(toolCall, $"Error: invalid JSON in Grep tool arguments: {ex.Message}. Expected format: {{\"pattern\": \"<regex>\"}}");
-        }
-
-        if (grepCall?.pattern == null)
+        if (grepCall.pattern == null)
         {
             return CreateErrorResult(toolCall, "Error: Grep tool missing required parameter 'pattern'.");
         }
@@ -414,6 +381,99 @@ public static class ResponseHandler
         {
             return null;
         }
+    }
+
+    private enum MatchStrategy
+    {
+        Exact,
+        CaseInsensitive,
+        NormalizedWhitespace
+    }
+
+    private record MatchResult(int Index, int Length, MatchStrategy Strategy);
+
+    private static MatchResult? FindBestMatch(string content, string oldString)
+    {
+        int firstIndex = content.IndexOf(oldString, StringComparison.Ordinal);
+        if (firstIndex != -1)
+        {
+            int lastIndex = content.LastIndexOf(oldString, StringComparison.Ordinal);
+            if (firstIndex == lastIndex)
+                return new MatchResult(firstIndex, oldString.Length, MatchStrategy.Exact);
+        }
+
+        firstIndex = content.IndexOf(oldString, StringComparison.OrdinalIgnoreCase);
+        if (firstIndex != -1)
+        {
+            int lastIndex = content.LastIndexOf(oldString, StringComparison.OrdinalIgnoreCase);
+            if (firstIndex == lastIndex)
+                return new MatchResult(firstIndex, oldString.Length, MatchStrategy.CaseInsensitive);
+        }
+
+        string normalizedContent = NormalizeWhitespace(content);
+        string normalizedOld = NormalizeWhitespace(oldString);
+        firstIndex = normalizedContent.IndexOf(normalizedOld, StringComparison.Ordinal);
+        if (firstIndex != -1)
+        {
+            int lastIndex = normalizedContent.LastIndexOf(normalizedOld, StringComparison.Ordinal);
+            if (firstIndex == lastIndex)
+            {
+                int originalIndex = FindOriginalPosition(content, normalizedContent, firstIndex);
+                return new MatchResult(originalIndex, oldString.Length, MatchStrategy.NormalizedWhitespace);
+            }
+        }
+
+        return null;
+    }
+
+    private static string NormalizeWhitespace(string text)
+    {
+        var result = new System.Text.StringBuilder(text.Length);
+        bool lastWasSpace = false;
+
+        foreach (char c in text)
+        {
+            if (char.IsWhiteSpace(c))
+            {
+                if (!lastWasSpace)
+                {
+                    result.Append(' ');
+                    lastWasSpace = true;
+                }
+            }
+            else
+            {
+                result.Append(c);
+                lastWasSpace = false;
+            }
+        }
+
+        return result.ToString();
+    }
+
+    private static int FindOriginalPosition(string original, string normalized, int normalizedIndex)
+    {
+        int origPos = 0;
+        int normPos = 0;
+
+        while (normPos < normalizedIndex && origPos < original.Length)
+        {
+            if (char.IsWhiteSpace(original[origPos]))
+            {
+                if (normPos < normalized.Length && normalized[normPos] == ' ')
+                    normPos++;
+                while (origPos < original.Length && char.IsWhiteSpace(original[origPos]))
+                    origPos++;
+            }
+            else
+            {
+                if (normPos < normalized.Length && original[origPos] == normalized[normPos])
+                    normPos++;
+                origPos++;
+            }
+        }
+
+        return origPos;
     }
 
     private static string BuildRipgrepArguments(ToolHandler.GrepCall grepCall)
