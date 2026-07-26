@@ -14,16 +14,16 @@ public static class ChatOrchestrator
         var systemMessage = new SystemChatMessage(SystemPrompt.GetPrompt(provider));
         List<ChatMessage> messages = [systemMessage, new UserChatMessage(prompt)];
 
-        Console.Error.WriteLine("=== VERBOSE MODE ===");
-        Console.Error.WriteLine($"Provider: {provider}");
-        Console.Error.WriteLine($"Model: {Configuration.GetModel()}");
-        Console.Error.WriteLine($"Context window: {contextWindowSize} tokens");
-        Console.Error.WriteLine($"Max tool result tokens: {Configuration.GetMaxToolResultTokens()}");
-        Console.Error.WriteLine($"Max iterations: {maxIterations}");
-        Console.Error.WriteLine($"System prompt length: {ContextManager.EstimateTokens(SystemPrompt.GetPrompt(provider))} tokens");
-        Console.Error.WriteLine($"User prompt: {prompt}");
-        Console.Error.WriteLine($"User prompt tokens: {ContextManager.EstimateTokens(prompt)}");
-        Console.Error.WriteLine("===================");
+        await Console.Error.WriteLineAsync("====================");
+        await Console.Error.WriteLineAsync($"Provider: {provider}");
+        await Console.Error.WriteLineAsync($"Model: {Configuration.GetModel()}");
+        await Console.Error.WriteLineAsync($"Context window: {contextWindowSize} tokens");
+        await Console.Error.WriteLineAsync($"Max tool result tokens: {Configuration.GetMaxToolResultTokens()}");
+        await Console.Error.WriteLineAsync($"Max iterations: {maxIterations}");
+        await Console.Error.WriteLineAsync($"System prompt length: {ContextManager.EstimateTokens(SystemPrompt.GetPrompt(provider))} tokens");
+        await Console.Error.WriteLineAsync($"User prompt: {prompt}");
+        await Console.Error.WriteLineAsync($"User prompt tokens: {ContextManager.EstimateTokens(prompt)}");
+        await Console.Error.WriteLineAsync("===================");
 
         for (int iteration = 0; iteration < maxIterations; iteration++)
         {
@@ -38,13 +38,13 @@ public static class ChatOrchestrator
                 break;
             }
 
-            Console.Error.WriteLine($"\n--- Tool Calls ({accumulatedToolCalls.Count}) ---");
+            await Console.Error.WriteLineAsync($"\n--- Tool Calls ({accumulatedToolCalls.Count}) ---");
             foreach (var acc in accumulatedToolCalls.Values)
             {
-                Console.Error.WriteLine($"  Tool: {acc.FunctionName}");
-                Console.Error.WriteLine($"  ID: {acc.Id}");
-                Console.Error.WriteLine($"  Args: {acc.Arguments}");
-                Console.Error.WriteLine("  ---");
+                await Console.Error.WriteLineAsync($"  Tool: {acc.FunctionName}");
+                await Console.Error.WriteLineAsync($"  ID: {acc.Id}");
+                await Console.Error.WriteLineAsync($"  Args: {acc.Arguments}");
+                await Console.Error.WriteLineAsync("  ---");
             }
 
             messages = FinalizeToolCalls(accumulatedToolCalls, messages, contextWindowSize);
