@@ -319,30 +319,36 @@ public static class ResponseHandler
         if (isWindows)
         {
             string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            string programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
             string[] knownPaths =
             [
                 Path.Combine(localAppData, @"Microsoft\WinGet\Packages"),
                 Path.Combine(localAppData, @"Programs\ripgrep"),
-                @"C:\Program Files\ripgrep",
-                @"C:\Program Files (x86)\ripgrep"
+                Path.Combine(programFiles, "ripgrep"),
+                Path.Combine(programFilesX86, "ripgrep")
             ];
 
-            foreach (string basePath in knownPaths)
-            {
-                if (Directory.Exists(basePath))
-                {
-                    try
-                    {
-                        var found = Directory.EnumerateFiles(basePath, executableName, SearchOption.AllDirectories)
-                            .FirstOrDefault();
-                        if (found != null) return found;
-                    }
-                    catch { /* skip permission errors */ }
-                }
-            }
+            return knownPaths
+                .Where(Directory.Exists)
+                .Select(basePath => FindFileInDirectory(basePath, executableName))
+                .FirstOrDefault(found => found != null);
         }
 
         return null;
+    }
+
+    private static string? FindFileInDirectory(string basePath, string fileName)
+    {
+        try
+        {
+            return Directory.EnumerateFiles(basePath, fileName, SearchOption.AllDirectories)
+                .FirstOrDefault();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     private static string BuildRipgrepArguments(ToolHandler.GrepCall grepCall)
