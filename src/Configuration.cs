@@ -49,7 +49,7 @@ public static class Configuration
     {
         var value = Environment.GetEnvironmentVariable("CONTEXT_WINDOW_SIZE");
         if (int.TryParse(value, out var result)) return result;
-        return GetProvider() == OllamaName ? 4096 : 128000;
+        return GetProvider() == OllamaName ? 32768 : 128000;
     }
 
     public static int GetMaxToolResultTokens()
