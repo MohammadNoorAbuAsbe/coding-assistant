@@ -205,21 +205,4 @@ public static class ResponseHandler
             return CreateErrorResult(toolCall, $"Error executing command '{bashCall.command}': {ex.Message}");
         }
     }
-
-    public static void DisplayConsoleContent(ChatCompletion response)
-    {
-        if (response.Content == null || response.Content.Count == 0)
-        {
-            return;
-        }
-
-        for (int i = 0; i < response.Content.Count; i++)
-        {
-            var part = response.Content[i];
-            if (!string.IsNullOrEmpty(part.Text))
-            {
-                Console.Write(part.Text);
-            }
-        }
-    }
 }
