@@ -52,7 +52,7 @@ A terminal-based AI coding assistant that uses LLMs to understand code and perfo
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `AI_PROVIDER` | No | `openrouter` | Set to `ollama` for local models |
+| `AI_PROVIDER` | No | `ollama` | Set to `openrouter` for cloud models |
 | `OPENROUTER_API_KEY` | Yes (OpenRouter) | — | API key for OpenRouter |
 | `OPENROUTER_BASE_URL` | No | `https://openrouter.ai/api/v1` | OpenRouter endpoint |
 | `OPENROUTER_MODEL` | No | `anthropic/claude-haiku-4.5` | Model to use via OpenRouter |

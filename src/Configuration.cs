@@ -3,26 +3,27 @@ namespace TerminalAiAssistant;
 public static class Configuration
 {
     private static string? _provider;
+    private const string OllamaName = "ollama";
 
     public static string GetProvider()
     {
         if (_provider != null) return _provider;
-        _provider = (Environment.GetEnvironmentVariable("AI_PROVIDER") ?? "openrouter").ToLower();
+        _provider = (Environment.GetEnvironmentVariable("AI_PROVIDER") ?? OllamaName).ToLower();
         return _provider;
     }
 
     public static string GetApiKey()
     {
-        if (GetProvider() == "ollama") return "ollama";
+        if (GetProvider() == OllamaName) return OllamaName;
         var apiKey = Environment.GetEnvironmentVariable("OPENROUTER_API_KEY");
         return string.IsNullOrEmpty(apiKey)
-            ? throw new Exception("OPENROUTER_API_KEY is not set. Set AI_PROVIDER=ollama for local models.")
+            ? throw new Exception("OPENROUTER_API_KEY is not set. Set AI_PROVIDER=openrouter or provide OPENROUTER_API_KEY.")
             : apiKey;
     }
 
     public static string GetBaseUrl()
     {
-        if (GetProvider() == "ollama")
+        if (GetProvider() == OllamaName)
         {
             return Environment.GetEnvironmentVariable("OLLAMA_BASE_URL") ?? "http://localhost:11434/v1";
         }
@@ -31,7 +32,7 @@ public static class Configuration
 
     public static string GetModel()
     {
-        if (GetProvider() == "ollama")
+        if (GetProvider() == OllamaName)
         {
             return Environment.GetEnvironmentVariable("OLLAMA_MODEL") ?? "qwen3:8b";
         }
@@ -48,7 +49,7 @@ public static class Configuration
     {
         var value = Environment.GetEnvironmentVariable("CONTEXT_WINDOW_SIZE");
         if (int.TryParse(value, out var result)) return result;
-        return GetProvider() == "ollama" ? 4096 : 128000;
+        return GetProvider() == OllamaName ? 4096 : 128000;
     }
 
     public static int GetMaxToolResultTokens()

@@ -52,13 +52,10 @@ public static class ChatOrchestrator
         if (contentUpdate == null)
             return;
 
-        foreach (var part in contentUpdate)
+        foreach (var text in contentUpdate.Where(p => !string.IsNullOrEmpty(p.Text)).Select(p => p.Text))
         {
-            if (!string.IsNullOrEmpty(part.Text))
-            {
-                Console.Write(part.Text);
-                responseContent = (responseContent ?? "") + part.Text;
-            }
+            Console.Write(text);
+            responseContent = (responseContent ?? "") + text;
         }
     }
 
