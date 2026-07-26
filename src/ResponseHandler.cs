@@ -48,9 +48,10 @@ public static class ResponseHandler
         {
             ToolHandler.ReadFunctionName => ProcessReadFileCall(toolCall),
             ToolHandler.WriteFunctionName => ProcessWriteFileCall(toolCall),
+            ToolHandler.EditFunctionName => ProcessEditFileCall(toolCall),
             ToolHandler.BashFunctionName => ProcessBashCall(toolCall),
             ToolHandler.GrepFunctionName => ProcessGrepCall(toolCall),
-            _ => CreateErrorResult(toolCall, $"Error: unknown function '{toolCall.FunctionName}'. Available functions: {ToolHandler.ReadFunctionName}, {ToolHandler.WriteFunctionName}, {ToolHandler.BashFunctionName}, {ToolHandler.GrepFunctionName}.")
+            _ => CreateErrorResult(toolCall, $"Error: unknown function '{toolCall.FunctionName}'. Available functions: {ToolHandler.ReadFunctionName}, {ToolHandler.WriteFunctionName}, {ToolHandler.EditFunctionName}, {ToolHandler.BashFunctionName}, {ToolHandler.GrepFunctionName}.")
         };
     }
 
@@ -136,6 +137,70 @@ public static class ResponseHandler
         catch (Exception ex)
         {
             return CreateErrorResult(toolCall, $"Error writing file '{writeFileCall.file_path}': {ex.Message}");
+        }
+    }
+
+    private static ToolChatMessage? ProcessEditFileCall(ChatToolCall toolCall)
+    {
+        if (toolCall.FunctionArguments == null)
+        {
+            return CreateErrorResult(toolCall, "Error: Edit tool called with no arguments. Expected format: {\"file_path\": \"<path>\", \"old_string\": \"<text>\", \"new_string\": \"<text>\"}");
+        }
+
+        ToolHandler.EditFileCall? editCall;
+        try
+        {
+            editCall = toolCall.FunctionArguments.ToObjectFromJson<ToolHandler.EditFileCall>(JsonOptions);
+        }
+        catch (JsonException ex)
+        {
+            return CreateErrorResult(toolCall, $"Error: invalid JSON in Edit tool arguments: {ex.Message}. Expected format: {{\"file_path\": \"<path>\", \"old_string\": \"<text>\", \"new_string\": \"<text>\"}}");
+        }
+
+        if (editCall?.file_path == null)
+        {
+            return CreateErrorResult(toolCall, "Error: Edit tool missing required parameter 'file_path'.");
+        }
+
+        if (editCall?.old_string == null)
+        {
+            return CreateErrorResult(toolCall, "Error: Edit tool missing required parameter 'old_string'.");
+        }
+
+        if (editCall?.new_string == null)
+        {
+            return CreateErrorResult(toolCall, "Error: Edit tool missing required parameter 'new_string'.");
+        }
+
+        try
+        {
+            if (!System.IO.File.Exists(editCall.file_path))
+            {
+                return CreateErrorResult(toolCall, $"Error: file not found '{editCall.file_path}'.");
+            }
+
+            string content = System.IO.File.ReadAllText(editCall.file_path);
+
+            int firstIndex = content.IndexOf(editCall.old_string, StringComparison.Ordinal);
+            if (firstIndex == -1)
+            {
+                return CreateErrorResult(toolCall, $"Error: Edit tool could not find the specified 'old_string' in '{editCall.file_path}'. Ensure the exact text (including whitespace) matches.");
+            }
+
+            int lastIndex = content.LastIndexOf(editCall.old_string, StringComparison.Ordinal);
+            if (firstIndex != lastIndex)
+            {
+                return CreateErrorResult(toolCall, $"Error: Edit tool found multiple occurrences of 'old_string' in '{editCall.file_path}'. Provide more surrounding context in 'old_string' to identify the correct match.");
+            }
+
+            string newContent = content.Replace(editCall.old_string, editCall.new_string);
+            System.IO.File.WriteAllText(editCall.file_path, newContent);
+
+            return new ToolChatMessage(toolCall.Id, $"Successfully edited {editCall.file_path} (replaced 1 occurrence).");
+        }
+        catch (Exception ex)
+        {
+            return CreateErrorResult(toolCall, $"Error editing file '{editCall.file_path}': {ex.Message}");
         }
     }
 

@@ -7,11 +7,13 @@ public static class ToolHandler
 {
     public const string ReadFunctionName = "Read";
     public const string WriteFunctionName = "Write";
+    public const string EditFunctionName = "Edit";
     public const string BashFunctionName = "Bash";
     public const string GrepFunctionName = "Grep";
 
     private const string ReadFunctionDescription = "Read and return the contents of a file";
     private const string WriteFunctionDescription = "Write content to a file";
+    private const string EditFunctionDescription = "Edit a file by performing an exact string replacement. Use this to make targeted changes instead of rewriting the entire file. Provide the exact old string to find and the new string to replace it with.";
     private const string BashFunctionDescription = "Execute a shell command";
     private const string GrepFunctionDescription = "Search for patterns in files using ripgrep. Supports regex patterns. Returns matching lines with file paths and line numbers. Respects .gitignore by default, skips binary files.";
     private const string FilePathPropertyName = "file_path";
@@ -26,6 +28,13 @@ public static class ToolHandler
             StringProperties(
                 (FilePathPropertyName, "The path of the file to write to"),
                 ("content", "The content to write to the file")));
+
+    public static ChatTool CreateEditTool() =>
+        CreateTool(EditFunctionName, EditFunctionDescription, [FilePathPropertyName, "old_string", "new_string"],
+            StringProperties(
+                (FilePathPropertyName, "The path to the file to edit"),
+                ("old_string", "The exact text to search for (must match exactly, including whitespace)"),
+                ("new_string", "The text to replace it with")));
 
     public static ChatTool CreateBashTool() =>
         CreateTool(BashFunctionName, BashFunctionDescription, ["command"],
@@ -49,6 +58,7 @@ public static class ToolHandler
             {
                 CreateReadTool(),
                 CreateWriteTool(),
+                CreateEditTool(),
                 CreateBashTool(),
                 CreateGrepTool()
             }
@@ -84,6 +94,13 @@ public static class ToolHandler
     {
         public required string file_path { get; set; }
         public required string content { get; set; }
+    }
+
+    public class EditFileCall
+    {
+        public required string file_path { get; set; }
+        public required string old_string { get; set; }
+        public required string new_string { get; set; }
     }
 
     public class BashCommandCall
