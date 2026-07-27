@@ -62,7 +62,7 @@ public static class ResponseHandler
         return new ToolChatMessage(toolCall.Id, errorMessage);
     }
 
-    private static T? ValidateAndDeserialize<T>(ChatToolCall toolCall) where T : class
+    private static T? DeserializeToolArguments<T>(ChatToolCall toolCall) where T : class
     {
         if (toolCall.FunctionArguments == null)
         {
@@ -79,322 +79,308 @@ public static class ResponseHandler
         }
     }
 
-    private static ToolChatMessage? ProcessReadFileCall(ChatToolCall toolCall)
+    private static ToolChatMessage? ExecuteToolCall<T>(
+        ChatToolCall toolCall,
+        string formatError,
+        string errorPrefix,
+        Func<T, ToolChatMessage> execute) where T : class
     {
-        var readFileCall = ValidateAndDeserialize<ToolHandler.ReadFileCall>(toolCall);
-        if (readFileCall == null)
+        var arguments = DeserializeToolArguments<T>(toolCall);
+        if (arguments == null)
         {
-            return CreateErrorResult(toolCall, "Error: Read tool called with invalid arguments. Expected format: {\"file_path\": \"<path>\"}");
-        }
-
-        if (readFileCall.file_path == null)
-        {
-            return CreateErrorResult(toolCall, "Error: Read tool missing required parameter 'file_path'. Expected format: {\"file_path\": \"<path>\"}");
+            return CreateErrorResult(toolCall, $"Error: {toolCall.FunctionName} tool called with invalid arguments. {formatError}");
         }
 
         try
         {
-            string[] lines = System.IO.File.ReadAllLines(readFileCall.file_path);
-            var sb = new System.Text.StringBuilder();
-            for (int i = 0; i < lines.Length; i++)
-            {
-                sb.AppendLine($"{i + 1}: {lines[i]}");
-            }
-            string fileText = sb.ToString();
-            int maxTokens = Configuration.GetMaxToolResultTokens();
-            fileText = ContextManager.TruncateToolResult(fileText, maxTokens);
-            return new ToolChatMessage(toolCall.Id, fileText);
+            return execute(arguments);
         }
         catch (Exception ex)
         {
-            return CreateErrorResult(toolCall, $"Error reading file '{readFileCall.file_path}': {ex.Message}");
+            return CreateErrorResult(toolCall, $"Error {errorPrefix}: {ex.Message}");
         }
+    }
+
+    private static ToolChatMessage? ProcessReadFileCall(ChatToolCall toolCall)
+    {
+        return ExecuteToolCall<ToolHandler.ReadFileCall>(
+            toolCall,
+            "Expected format: {\"file_path\": \"<path>\"}",
+            "reading file",
+            args =>
+            {
+                if (args.file_path == null)
+                {
+                    return CreateErrorResult(toolCall, "Error: Read tool missing required parameter 'file_path'. Expected format: {\"file_path\": \"<path>\"}");
+                }
+
+                string[] lines = System.IO.File.ReadAllLines(args.file_path);
+                var sb = new System.Text.StringBuilder();
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    sb.AppendLine($"{i + 1}: {lines[i]}");
+                }
+                string fileText = sb.ToString();
+                int maxTokens = Configuration.GetMaxToolResultTokens();
+                fileText = ContextManager.TruncateToolResult(fileText, maxTokens);
+                return new ToolChatMessage(toolCall.Id, fileText);
+            });
     }
 
     private static ToolChatMessage? ProcessWriteFileCall(ChatToolCall toolCall)
     {
-        var writeFileCall = ValidateAndDeserialize<ToolHandler.WriteFileCall>(toolCall);
-        if (writeFileCall == null)
-        {
-            return CreateErrorResult(toolCall, "Error: Write tool called with invalid arguments. Expected format: {\"file_path\": \"<path>\", \"content\": \"<content>\"}");
-        }
-
-        if (writeFileCall.file_path == null)
-        {
-            return CreateErrorResult(toolCall, "Error: Write tool missing required parameter 'file_path'.");
-        }
-
-        if (writeFileCall.content == null)
-        {
-            return CreateErrorResult(toolCall, "Error: Write tool missing required parameter 'content'.");
-        }
-
-        try
-        {
-            string? directory = System.IO.Path.GetDirectoryName(writeFileCall.file_path);
-            if (!string.IsNullOrEmpty(directory))
+        return ExecuteToolCall<ToolHandler.WriteFileCall>(
+            toolCall,
+            "Expected format: {\"file_path\": \"<path>\", \"content\": \"<content>\"}",
+            "writing file",
+            args =>
             {
-                System.IO.Directory.CreateDirectory(directory);
-            }
+                if (args.file_path == null)
+                {
+                    return CreateErrorResult(toolCall, "Error: Write tool missing required parameter 'file_path'.");
+                }
 
-            System.IO.File.WriteAllText(writeFileCall.file_path, writeFileCall.content);
-            return new ToolChatMessage(toolCall.Id, $"Successfully wrote content to {writeFileCall.file_path}");
-        }
-        catch (Exception ex)
-        {
-            return CreateErrorResult(toolCall, $"Error writing file '{writeFileCall.file_path}': {ex.Message}");
-        }
+                if (args.content == null)
+                {
+                    return CreateErrorResult(toolCall, "Error: Write tool missing required parameter 'content'.");
+                }
+
+                string? directory = System.IO.Path.GetDirectoryName(args.file_path);
+                if (!string.IsNullOrEmpty(directory))
+                {
+                    System.IO.Directory.CreateDirectory(directory);
+                }
+
+                System.IO.File.WriteAllText(args.file_path, args.content);
+                return new ToolChatMessage(toolCall.Id, $"Successfully wrote content to {args.file_path}");
+            });
     }
 
     private static ToolChatMessage? ProcessEditFileCall(ChatToolCall toolCall)
     {
-        var editCall = ValidateAndDeserialize<ToolHandler.EditFileCall>(toolCall);
-        if (editCall == null)
-        {
-            return CreateErrorResult(toolCall, "Error: Edit tool called with invalid arguments. Expected format: {\"file_path\": \"<path>\", \"old_string\": \"<text>\", \"new_string\": \"<text>\"}");
-        }
-
-        if (editCall.file_path == null)
-        {
-            return CreateErrorResult(toolCall, "Error: Edit tool missing required parameter 'file_path'.");
-        }
-
-        if (editCall.old_string == null)
-        {
-            return CreateErrorResult(toolCall, "Error: Edit tool missing required parameter 'old_string'.");
-        }
-
-        if (editCall.new_string == null)
-        {
-            return CreateErrorResult(toolCall, "Error: Edit tool missing required parameter 'new_string'.");
-        }
-
-        try
-        {
-            if (!System.IO.File.Exists(editCall.file_path))
+        return ExecuteToolCall<ToolHandler.EditFileCall>(
+            toolCall,
+            "Expected format: {\"file_path\": \"<path>\", \"old_string\": \"<text>\", \"new_string\": \"<text>\"}",
+            "editing file",
+            args =>
             {
-                return CreateErrorResult(toolCall, $"Error: file not found '{editCall.file_path}'.");
-            }
+                if (args.file_path == null)
+                {
+                    return CreateErrorResult(toolCall, "Error: Edit tool missing required parameter 'file_path'.");
+                }
 
-            string content = System.IO.File.ReadAllText(editCall.file_path);
+                if (args.old_string == null)
+                {
+                    return CreateErrorResult(toolCall, "Error: Edit tool missing required parameter 'old_string'.");
+                }
 
-            var match = FindBestMatch(content, editCall.old_string);
-            if (match == null)
-            {
-                return CreateErrorResult(toolCall, $"Error: Edit tool could not find the specified 'old_string' in '{editCall.file_path}'. Use the EditLine tool instead - Read the file first to see line numbers, then use EditLine with start_line and end_line.");
-            }
+                if (args.new_string == null)
+                {
+                    return CreateErrorResult(toolCall, "Error: Edit tool missing required parameter 'new_string'.");
+                }
 
-            string newContent = content.Substring(0, match.Index) + editCall.new_string + content.Substring(match.Index + match.Length);
-            System.IO.File.WriteAllText(editCall.file_path, newContent);
+                if (!System.IO.File.Exists(args.file_path))
+                {
+                    return CreateErrorResult(toolCall, $"Error: file not found '{args.file_path}'.");
+                }
 
-            string note = match.Strategy == MatchStrategy.Exact ? "" : $" (matched using {match.Strategy} comparison)";
-            return new ToolChatMessage(toolCall.Id, $"Successfully edited {editCall.file_path}{note}.");
-        }
-        catch (Exception ex)
-        {
-            return CreateErrorResult(toolCall, $"Error editing file '{editCall.file_path}': {ex.Message}");
-        }
+                string content = System.IO.File.ReadAllText(args.file_path);
+
+                var match = FindBestMatch(content, args.old_string);
+                if (match == null)
+                {
+                    return CreateErrorResult(toolCall, $"Error: Edit tool could not find the specified 'old_string' in '{args.file_path}'. Use the EditLine tool instead - Read the file first to see line numbers, then use EditLine with start_line and end_line.");
+                }
+
+                string newContent = content.Substring(0, match.Index) + args.new_string + content.Substring(match.Index + match.Length);
+                System.IO.File.WriteAllText(args.file_path, newContent);
+
+                string note = match.Strategy == MatchStrategy.Exact ? "" : $" (matched using {match.Strategy} comparison)";
+                return new ToolChatMessage(toolCall.Id, $"Successfully edited {args.file_path}{note}.");
+            });
     }
 
     private static ToolChatMessage? ProcessEditLineCall(ChatToolCall toolCall)
     {
-        var editCall = ValidateAndDeserialize<ToolHandler.EditLineCall>(toolCall);
-        if (editCall == null)
-        {
-            return CreateErrorResult(toolCall, "Error: EditLine tool called with invalid arguments. Expected format: {\"file_path\": \"<path>\", \"start_line\": \"<number>\", \"end_line\": \"<number>\", \"new_content\": \"<text>\"}");
-        }
-
-        if (editCall.file_path == null)
-        {
-            return CreateErrorResult(toolCall, "Error: EditLine tool missing required parameter 'file_path'.");
-        }
-
-        if (!int.TryParse(editCall.start_line, out int startLine) || startLine < 1)
-        {
-            return CreateErrorResult(toolCall, "Error: EditLine tool 'start_line' must be a positive integer.");
-        }
-
-        if (!int.TryParse(editCall.end_line, out int endLine) || endLine < startLine)
-        {
-            return CreateErrorResult(toolCall, "Error: EditLine tool 'end_line' must be >= start_line.");
-        }
-
-        if (editCall.new_content == null)
-        {
-            return CreateErrorResult(toolCall, "Error: EditLine tool missing required parameter 'new_content'.");
-        }
-
-        try
-        {
-            if (!System.IO.File.Exists(editCall.file_path))
+        return ExecuteToolCall<ToolHandler.EditLineCall>(
+            toolCall,
+            "Expected format: {\"file_path\": \"<path>\", \"start_line\": \"<number>\", \"end_line\": \"<number>\", \"new_content\": \"<text>\"}",
+            "editing file",
+            args =>
             {
-                return CreateErrorResult(toolCall, $"Error: file not found '{editCall.file_path}'.");
-            }
+                if (args.file_path == null)
+                {
+                    return CreateErrorResult(toolCall, "Error: EditLine tool missing required parameter 'file_path'.");
+                }
 
-            string[] lines = System.IO.File.ReadAllLines(editCall.file_path);
+                if (!int.TryParse(args.start_line, out int startLine) || startLine < 1)
+                {
+                    return CreateErrorResult(toolCall, "Error: EditLine tool 'start_line' must be a positive integer.");
+                }
 
-            if (startLine > lines.Length)
-            {
-                return CreateErrorResult(toolCall, $"Error: start_line {startLine} exceeds file length ({lines.Length} lines).");
-            }
+                if (!int.TryParse(args.end_line, out int endLine) || endLine < startLine)
+                {
+                    return CreateErrorResult(toolCall, "Error: EditLine tool 'end_line' must be >= start_line.");
+                }
 
-            int endIdx = Math.Min(endLine, lines.Length);
-            var newLines = new List<string>();
-            newLines.AddRange(lines.Take(startLine - 1));
-            newLines.Add(editCall.new_content);
-            newLines.AddRange(lines.Skip(endIdx));
+                if (args.new_content == null)
+                {
+                    return CreateErrorResult(toolCall, "Error: EditLine tool missing required parameter 'new_content'.");
+                }
 
-            System.IO.File.WriteAllLines(editCall.file_path, newLines);
-            int newTotalLines = newLines.Count;
-            int newContentStart = startLine;
-            int newContentEnd = startLine + editCall.new_content.Split('\n').Length - 1;
-            return new ToolChatMessage(toolCall.Id, $"Successfully edited {editCall.file_path} (replaced lines {startLine}-{endLine} with {newContentStart}-{newContentEnd}). File now has {newTotalLines} lines. ALWAYS re-read the file before your next edit to get fresh line numbers.");
-        }
-        catch (Exception ex)
-        {
-            return CreateErrorResult(toolCall, $"Error editing file '{editCall.file_path}': {ex.Message}");
-        }
+                if (!System.IO.File.Exists(args.file_path))
+                {
+                    return CreateErrorResult(toolCall, $"Error: file not found '{args.file_path}'.");
+                }
+
+                string[] lines = System.IO.File.ReadAllLines(args.file_path);
+
+                if (startLine > lines.Length)
+                {
+                    return CreateErrorResult(toolCall, $"Error: start_line {startLine} exceeds file length ({lines.Length} lines).");
+                }
+
+                int endIdx = Math.Min(endLine, lines.Length);
+                var newLines = new List<string>();
+                newLines.AddRange(lines.Take(startLine - 1));
+                newLines.Add(args.new_content);
+                newLines.AddRange(lines.Skip(endIdx));
+
+                System.IO.File.WriteAllLines(args.file_path, newLines);
+                int newTotalLines = newLines.Count;
+                int newContentStart = startLine;
+                int newContentEnd = startLine + args.new_content.Split('\n').Length - 1;
+                return new ToolChatMessage(toolCall.Id, $"Successfully edited {args.file_path} (replaced lines {startLine}-{endLine} with {newContentStart}-{newContentEnd}). File now has {newTotalLines} lines. ALWAYS re-read the file before your next edit to get fresh line numbers.");
+            });
     }
 
     private static ToolChatMessage? ProcessBashCall(ChatToolCall toolCall)
     {
-        var bashCall = ValidateAndDeserialize<ToolHandler.BashCommandCall>(toolCall);
-        if (bashCall == null)
-        {
-            return CreateErrorResult(toolCall, "Error: Bash tool called with invalid arguments. Expected format: {\"command\": \"<command>\"}");
-        }
-
-        if (bashCall.command == null)
-        {
-            return CreateErrorResult(toolCall, "Error: Bash tool missing required parameter 'command'.");
-        }
-
-        try
-        {
-            bool isWindows = OperatingSystem.IsWindows();
-            string shell = isWindows ? "powershell.exe" : "bash";
-            string argumentsPrefix = isWindows ? "-Command" : "-c";
-
-            var processStartInfo = new ProcessStartInfo
+        return ExecuteToolCall<ToolHandler.BashCommandCall>(
+            toolCall,
+            "Expected format: {\"command\": \"<command>\"}",
+            "executing command",
+            args =>
             {
-                FileName = shell,
-                Arguments = $"{argumentsPrefix} \"{bashCall.command}\"",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                WorkingDirectory = Environment.CurrentDirectory
-            };
+                if (args.command == null)
+                {
+                    return CreateErrorResult(toolCall, "Error: Bash tool missing required parameter 'command'.");
+                }
 
-            using var process = new Process { StartInfo = processStartInfo };
-            process.Start();
+                bool isWindows = OperatingSystem.IsWindows();
+                string shell = isWindows ? "powershell.exe" : "bash";
+                string argumentsPrefix = isWindows ? "-Command" : "-c";
 
-            string stdout = process.StandardOutput.ReadToEnd();
-            string stderr = process.StandardError.ReadToEnd();
+                var processStartInfo = new ProcessStartInfo
+                {
+                    FileName = shell,
+                    Arguments = $"{argumentsPrefix} \"{args.command}\"",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    WorkingDirectory = Environment.CurrentDirectory
+                };
 
-            process.WaitForExit();
+                using var process = new Process { StartInfo = processStartInfo };
+                process.Start();
 
-            string result;
-            if (process.ExitCode == 0)
-            {
-                result = stdout;
-            }
-            else
-            {
-                result = $"Exit code: {process.ExitCode}\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}";
-            }
+                string stdout = process.StandardOutput.ReadToEnd();
+                string stderr = process.StandardError.ReadToEnd();
 
-            int maxTokens = Configuration.GetMaxToolResultTokens();
-            result = ContextManager.TruncateToolResult(result, maxTokens);
+                process.WaitForExit();
 
-            return new ToolChatMessage(toolCall.Id, result);
-        }
-        catch (Exception ex)
-        {
-            return CreateErrorResult(toolCall, $"Error executing command '{bashCall.command}': {ex.Message}");
-        }
+                string result;
+                if (process.ExitCode == 0)
+                {
+                    result = stdout;
+                }
+                else
+                {
+                    result = $"Exit code: {process.ExitCode}\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}";
+                }
+
+                int maxTokens = Configuration.GetMaxToolResultTokens();
+                result = ContextManager.TruncateToolResult(result, maxTokens);
+
+                return new ToolChatMessage(toolCall.Id, result);
+            });
     }
 
     private static ToolChatMessage? ProcessGrepCall(ChatToolCall toolCall)
     {
-        var grepCall = ValidateAndDeserialize<ToolHandler.GrepCall>(toolCall);
-        if (grepCall == null)
-        {
-            return CreateErrorResult(toolCall, "Error: Grep tool called with invalid arguments. Expected format: {\"pattern\": \"<regex>\"}");
-        }
-
-        if (grepCall.pattern == null)
-        {
-            return CreateErrorResult(toolCall, "Error: Grep tool missing required parameter 'pattern'.");
-        }
-
-        try
-        {
-            string rgPath = FindRipgrep() ?? "";
-            if (string.IsNullOrEmpty(rgPath))
+        return ExecuteToolCall<ToolHandler.GrepCall>(
+            toolCall,
+            "Expected format: {\"pattern\": \"<regex>\"}",
+            "running ripgrep",
+            args =>
             {
-                return CreateErrorResult(toolCall, "Error: ripgrep (rg) not found. Install it with: winget install BurntSushi.ripgrep.MSVC");
-            }
-
-            string arguments = BuildRipgrepArguments(grepCall);
-
-            var processStartInfo = new ProcessStartInfo
-            {
-                FileName = rgPath,
-                Arguments = arguments,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                WorkingDirectory = Environment.CurrentDirectory
-            };
-
-            using var process = new Process { StartInfo = processStartInfo };
-            process.Start();
-
-            string stdout = process.StandardOutput.ReadToEnd();
-            string stderr = process.StandardError.ReadToEnd();
-
-            bool finished = process.WaitForExit(10000);
-
-            if (!finished)
-            {
-                process.Kill();
-                return CreateErrorResult(toolCall, "Error: ripgrep search timed out after 10 seconds. Try a more specific pattern or path.");
-            }
-
-            if (process.ExitCode == 2)
-            {
-                return CreateErrorResult(toolCall, $"Error: ripgrep invalid pattern '{grepCall.pattern}': {stderr}");
-            }
-
-            string result;
-            if (string.IsNullOrWhiteSpace(stdout))
-            {
-                result = $"No matches found for pattern: {grepCall.pattern}";
-            }
-            else
-            {
-                string[] lines = stdout.Trim().Split('\n');
-                if (lines.Length > 100)
+                if (args.pattern == null)
                 {
-                    result = string.Join("\n", lines.Take(100)) + $"\n\n... [showing 100 of {lines.Length} matches, refine your pattern to narrow results]";
+                    return CreateErrorResult(toolCall, "Error: Grep tool missing required parameter 'pattern'.");
+                }
+
+                string rgPath = FindRipgrep() ?? "";
+                if (string.IsNullOrEmpty(rgPath))
+                {
+                    return CreateErrorResult(toolCall, "Error: ripgrep (rg) not found. Install it with: winget install BurntSushi.ripgrep.MSVC");
+                }
+
+                string arguments = BuildRipgrepArguments(args);
+
+                var processStartInfo = new ProcessStartInfo
+                {
+                    FileName = rgPath,
+                    Arguments = arguments,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    WorkingDirectory = Environment.CurrentDirectory
+                };
+
+                using var process = new Process { StartInfo = processStartInfo };
+                process.Start();
+
+                string stdout = process.StandardOutput.ReadToEnd();
+                string stderr = process.StandardError.ReadToEnd();
+
+                bool finished = process.WaitForExit(10000);
+
+                if (!finished)
+                {
+                    process.Kill();
+                    return CreateErrorResult(toolCall, "Error: ripgrep search timed out after 10 seconds. Try a more specific pattern or path.");
+                }
+
+                if (process.ExitCode == 2)
+                {
+                    return CreateErrorResult(toolCall, $"Error: ripgrep invalid pattern '{args.pattern}': {stderr}");
+                }
+
+                string result;
+                if (string.IsNullOrWhiteSpace(stdout))
+                {
+                    result = $"No matches found for pattern: {args.pattern}";
                 }
                 else
                 {
-                    result = stdout.Trim();
+                    string[] lines = stdout.Trim().Split('\n');
+                    if (lines.Length > 100)
+                    {
+                        result = string.Join("\n", lines.Take(100)) + $"\n\n... [showing 100 of {lines.Length} matches, refine your pattern to narrow results]";
+                    }
+                    else
+                    {
+                        result = stdout.Trim();
+                    }
                 }
-            }
 
-            int maxTokens = Configuration.GetMaxToolResultTokens();
-            result = ContextManager.TruncateToolResult(result, maxTokens);
+                int maxTokens = Configuration.GetMaxToolResultTokens();
+                result = ContextManager.TruncateToolResult(result, maxTokens);
 
-            return new ToolChatMessage(toolCall.Id, result);
-        }
-        catch (Exception ex)
-        {
-            return CreateErrorResult(toolCall, $"Error running ripgrep: {ex.Message}");
-        }
+                return new ToolChatMessage(toolCall.Id, result);
+            });
     }
 
     private static string? FindRipgrep()
