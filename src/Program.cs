@@ -1,15 +1,49 @@
 using TerminalAiAssistant;
 
-if (args.Length < 2 || args[0] != "-p")
+Configuration.LoadEnvFile();
+Configuration.LoadProviderConfigs();
+
+var providers = Configuration.Providers;
+
+do
 {
-    throw new Exception("Usage: program -p <prompt>");
-}
+    string providerId;
+    var envProvider = Environment.GetEnvironmentVariable("AI_PROVIDER");
 
-var prompt = args[1];
+    if (envProvider != null && providers.ContainsKey(envProvider))
+    {
+        providerId = envProvider;
+        Console.WriteLine($"\nProvider: {providers[providerId].DisplayName} (from AI_PROVIDER)");
+    }
+    else
+    {
+        providerId = MenuHandler.SelectProvider(providers);
+    }
 
-if (string.IsNullOrEmpty(prompt))
-{
-    throw new Exception("Prompt must not be empty");
-}
+    Configuration.SetProvider(providerId);
+    var providerConfig = providers[providerId];
 
-await ChatOrchestrator.Run(prompt);
+    string model;
+    var envModel = Environment.GetEnvironmentVariable("AI_MODEL");
+    if (envProvider != null && envModel != null)
+    {
+        model = envModel;
+        Console.WriteLine($"Model: {model} (from AI_MODEL)");
+    }
+    else
+    {
+        model = MenuHandler.SelectModel(providerId, providerConfig);
+    }
+
+    Configuration.SetModel(model);
+
+    var prompt = MenuHandler.GetPrompt();
+    if (string.IsNullOrWhiteSpace(prompt))
+    {
+        Console.WriteLine("Prompt must not be empty.");
+        continue;
+    }
+
+    await ChatOrchestrator.Run(prompt);
+
+} while (MenuHandler.AskRunAgain());

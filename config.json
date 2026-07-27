@@ -1,0 +1,29 @@
+{
+  "providers": {
+    "ollama": {
+      "displayName": "Ollama (Local)",
+      "baseUrl": "http://localhost:11434/v1",
+      "defaultModel": "qwen3:8b",
+      "needsApiKey": false,
+      "models": []
+    },
+    "openrouter": {
+      "displayName": "OpenRouter (Cloud)",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "defaultModel": "openrouter/free",
+      "needsApiKey": true,
+      "apiKeyEnvVar": "OPENROUTER_API_KEY",
+      "siteUrlEnvVar": "OPENROUTER_SITE_URL",
+      "siteNameEnvVar": "OPENROUTER_SITE_NAME",
+      "models": ["openrouter/free"]
+    },
+    "openai": {
+      "displayName": "OpenAI (Cloud)",
+      "baseUrl": "https://api.openai.com/v1",
+      "defaultModel": "gpt-4o",
+      "needsApiKey": true,
+      "apiKeyEnvVar": "OPENAI_API_KEY",
+      "models": ["gpt-4o", "gpt-4o-mini", "o3-mini", "o4-mini"]
+    }
+  }
+}
