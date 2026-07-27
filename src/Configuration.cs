@@ -4,6 +4,7 @@ public static class Configuration
 {
     private static string? _provider;
     private const string OllamaName = "ollama";
+    private const string OpenRouterName = "openrouter";
 
     public static string GetProvider()
     {
@@ -36,7 +37,21 @@ public static class Configuration
         {
             return Environment.GetEnvironmentVariable("OLLAMA_MODEL") ?? "qwen3:8b";
         }
-        return Environment.GetEnvironmentVariable("OPENROUTER_MODEL") ?? "anthropic/claude-haiku-4.5";
+        return Environment.GetEnvironmentVariable("OPENROUTER_MODEL") ?? "openrouter/free";
+    }
+
+    public static string? GetSiteUrl()
+    {
+        return GetProvider() == OpenRouterName
+            ? Environment.GetEnvironmentVariable("OPENROUTER_SITE_URL")
+            : null;
+    }
+
+    public static string? GetSiteName()
+    {
+        return GetProvider() == OpenRouterName
+            ? Environment.GetEnvironmentVariable("OPENROUTER_SITE_NAME")
+            : null;
     }
 
     public static int GetMaxIterations()

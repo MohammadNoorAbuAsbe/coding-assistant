@@ -55,7 +55,9 @@ A terminal-based AI coding assistant that uses LLMs to understand code and perfo
 | `AI_PROVIDER` | No | `ollama` | Set to `openrouter` for cloud models |
 | `OPENROUTER_API_KEY` | Yes (OpenRouter) | — | API key for OpenRouter |
 | `OPENROUTER_BASE_URL` | No | `https://openrouter.ai/api/v1` | OpenRouter endpoint |
-| `OPENROUTER_MODEL` | No | `anthropic/claude-haiku-4.5` | Model to use via OpenRouter |
+| `OPENROUTER_MODEL` | No | `openrouter/free` | Model to use via OpenRouter |
+| `OPENROUTER_SITE_URL` | No | — | Sent as `HTTP-Referer` header (for OpenRouter ranking) |
+| `OPENROUTER_SITE_NAME` | No | — | Sent as `X-Title` header (for OpenRouter ranking) |
 | `OLLAMA_BASE_URL` | No | `http://localhost:11434/v1` | Ollama endpoint |
 | `OLLAMA_MODEL` | No | `qwen3:8b` | Model to use via Ollama |
 | `SYSTEM_PROMPT` | No | (built-in) | Override the system prompt |
