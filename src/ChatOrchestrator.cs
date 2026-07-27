@@ -34,7 +34,16 @@ public static class ChatOrchestrator
             if (accumulatedToolCalls.Count == 0)
             {
                 if (!string.IsNullOrEmpty(responseContent))
+                {
                     Console.WriteLine();
+
+                    if (LooksLikeSkippedEdit(responseContent) && iteration < maxIterations - 1)
+                    {
+                        messages.Add(new AssistantChatMessage(responseContent));
+                        messages.Add(new UserChatMessage("You described the code changes above but did not apply them. Execute the necessary Edit or EditLine tool calls now to actually make these changes to the files. Do not repeat the descriptions — just apply them."));
+                        continue;
+                    }
+                }
                 break;
             }
 
@@ -156,6 +165,20 @@ public static class ChatOrchestrator
         Console.Error.WriteLine("====================\n");
 
         return truncated;
+    }
+
+    private static bool LooksLikeSkippedEdit(string response)
+    {
+        if (!response.Contains("```")) return false;
+
+        bool mentionsSourceFile = response.Contains(".cs") ||
+            response.Contains(".py") ||
+            response.Contains(".js") ||
+            response.Contains(".ts") ||
+            response.Contains(".csproj") ||
+            response.Contains(".json");
+
+        return mentionsSourceFile;
     }
 }
 
