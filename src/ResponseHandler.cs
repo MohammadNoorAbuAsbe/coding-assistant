@@ -245,7 +245,10 @@ public static class ResponseHandler
             newLines.AddRange(lines.Skip(endIdx));
 
             System.IO.File.WriteAllLines(editCall.file_path, newLines);
-            return new ToolChatMessage(toolCall.Id, $"Successfully edited {editCall.file_path} (replaced lines {startLine}-{endLine}).");
+            int newTotalLines = newLines.Count;
+            int newContentStart = startLine;
+            int newContentEnd = startLine + editCall.new_content.Split('\n').Length - 1;
+            return new ToolChatMessage(toolCall.Id, $"Successfully edited {editCall.file_path} (replaced lines {startLine}-{endLine} with {newContentStart}-{newContentEnd}). File now has {newTotalLines} lines. ALWAYS re-read the file before your next edit to get fresh line numbers.");
         }
         catch (Exception ex)
         {
