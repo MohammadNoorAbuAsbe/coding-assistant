@@ -8,12 +8,14 @@ public static class ToolHandler
     public const string ReadFunctionName = "Read";
     public const string WriteFunctionName = "Write";
     public const string EditFunctionName = "Edit";
+    public const string EditLineFunctionName = "EditLine";
     public const string BashFunctionName = "Bash";
     public const string GrepFunctionName = "Grep";
 
     private const string ReadFunctionDescription = "Read and return the contents of a file";
     private const string WriteFunctionDescription = "Write content to a file";
     private const string EditFunctionDescription = "Edit a file by performing an exact string replacement. Use this to make targeted changes instead of rewriting the entire file. Provide the exact old string to find and the new string to replace it with.";
+    private const string EditLineFunctionDescription = "Edit a file by replacing lines by line number. Use the Read tool first to see line numbers. Replace lines start_line through end_line (inclusive) with new_content. Use this when you cannot reproduce exact text for the Edit tool.";
     private const string BashFunctionDescription = "Execute a shell command";
     private const string GrepFunctionDescription = "Search for patterns in files using ripgrep. Supports regex patterns. Returns matching lines with file paths and line numbers. Respects .gitignore by default, skips binary files.";
     private const string FilePathPropertyName = "file_path";
@@ -35,6 +37,14 @@ public static class ToolHandler
                 (FilePathPropertyName, "The path to the file to edit"),
                 ("old_string", "The exact text to search for (must match exactly, including whitespace)"),
                 ("new_string", "The text to replace it with")));
+
+    public static ChatTool CreateEditLineTool() =>
+        CreateTool(EditLineFunctionName, EditLineFunctionDescription, [FilePathPropertyName, "start_line", "end_line", "new_content"],
+            StringProperties(
+                (FilePathPropertyName, "The path to the file to edit"),
+                ("start_line", "First line number to replace (1-indexed, inclusive)"),
+                ("end_line", "Last line number to replace (1-indexed, inclusive)"),
+                ("new_content", "The new content to replace the lines with")));
 
     public static ChatTool CreateBashTool() =>
         CreateTool(BashFunctionName, BashFunctionDescription, ["command"],
@@ -59,6 +69,7 @@ public static class ToolHandler
                 CreateReadTool(),
                 CreateWriteTool(),
                 CreateEditTool(),
+                CreateEditLineTool(),
                 CreateBashTool(),
                 CreateGrepTool()
             }
@@ -101,6 +112,14 @@ public static class ToolHandler
         public required string file_path { get; set; }
         public required string old_string { get; set; }
         public required string new_string { get; set; }
+    }
+
+    public class EditLineCall
+    {
+        public required string file_path { get; set; }
+        public required string start_line { get; set; }
+        public required string end_line { get; set; }
+        public required string new_content { get; set; }
     }
 
     public class BashCommandCall

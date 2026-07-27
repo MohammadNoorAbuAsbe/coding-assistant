@@ -49,9 +49,10 @@ public static class ResponseHandler
             ToolHandler.ReadFunctionName => ProcessReadFileCall(toolCall),
             ToolHandler.WriteFunctionName => ProcessWriteFileCall(toolCall),
             ToolHandler.EditFunctionName => ProcessEditFileCall(toolCall),
+            ToolHandler.EditLineFunctionName => ProcessEditLineCall(toolCall),
             ToolHandler.BashFunctionName => ProcessBashCall(toolCall),
             ToolHandler.GrepFunctionName => ProcessGrepCall(toolCall),
-            _ => CreateErrorResult(toolCall, $"Error: unknown function '{toolCall.FunctionName}'. Available functions: {ToolHandler.ReadFunctionName}, {ToolHandler.WriteFunctionName}, {ToolHandler.EditFunctionName}, {ToolHandler.BashFunctionName}, {ToolHandler.GrepFunctionName}.")
+            _ => CreateErrorResult(toolCall, $"Error: unknown function '{toolCall.FunctionName}'. Available functions: {ToolHandler.ReadFunctionName}, {ToolHandler.WriteFunctionName}, {ToolHandler.EditFunctionName}, {ToolHandler.EditLineFunctionName}, {ToolHandler.BashFunctionName}, {ToolHandler.GrepFunctionName}.")
         };
     }
 
@@ -93,7 +94,13 @@ public static class ResponseHandler
 
         try
         {
-            string fileText = System.IO.File.ReadAllText(readFileCall.file_path);
+            string[] lines = System.IO.File.ReadAllLines(readFileCall.file_path);
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < lines.Length; i++)
+            {
+                sb.AppendLine($"{i + 1}: {lines[i]}");
+            }
+            string fileText = sb.ToString();
             int maxTokens = Configuration.GetMaxToolResultTokens();
             fileText = ContextManager.TruncateToolResult(fileText, maxTokens);
             return new ToolChatMessage(toolCall.Id, fileText);
@@ -174,7 +181,7 @@ public static class ResponseHandler
             var match = FindBestMatch(content, editCall.old_string);
             if (match == null)
             {
-                return CreateErrorResult(toolCall, $"Error: Edit tool could not find the specified 'old_string' in '{editCall.file_path}'. Ensure the text matches content in the file.");
+                return CreateErrorResult(toolCall, $"Error: Edit tool could not find the specified 'old_string' in '{editCall.file_path}'. Use the EditLine tool instead - Read the file first to see line numbers, then use EditLine with start_line and end_line.");
             }
 
             string newContent = content.Substring(0, match.Index) + editCall.new_string + content.Substring(match.Index + match.Length);
@@ -182,6 +189,63 @@ public static class ResponseHandler
 
             string note = match.Strategy == MatchStrategy.Exact ? "" : $" (matched using {match.Strategy} comparison)";
             return new ToolChatMessage(toolCall.Id, $"Successfully edited {editCall.file_path}{note}.");
+        }
+        catch (Exception ex)
+        {
+            return CreateErrorResult(toolCall, $"Error editing file '{editCall.file_path}': {ex.Message}");
+        }
+    }
+
+    private static ToolChatMessage? ProcessEditLineCall(ChatToolCall toolCall)
+    {
+        var editCall = ValidateAndDeserialize<ToolHandler.EditLineCall>(toolCall);
+        if (editCall == null)
+        {
+            return CreateErrorResult(toolCall, "Error: EditLine tool called with invalid arguments. Expected format: {\"file_path\": \"<path>\", \"start_line\": \"<number>\", \"end_line\": \"<number>\", \"new_content\": \"<text>\"}");
+        }
+
+        if (editCall.file_path == null)
+        {
+            return CreateErrorResult(toolCall, "Error: EditLine tool missing required parameter 'file_path'.");
+        }
+
+        if (!int.TryParse(editCall.start_line, out int startLine) || startLine < 1)
+        {
+            return CreateErrorResult(toolCall, "Error: EditLine tool 'start_line' must be a positive integer.");
+        }
+
+        if (!int.TryParse(editCall.end_line, out int endLine) || endLine < startLine)
+        {
+            return CreateErrorResult(toolCall, "Error: EditLine tool 'end_line' must be >= start_line.");
+        }
+
+        if (editCall.new_content == null)
+        {
+            return CreateErrorResult(toolCall, "Error: EditLine tool missing required parameter 'new_content'.");
+        }
+
+        try
+        {
+            if (!System.IO.File.Exists(editCall.file_path))
+            {
+                return CreateErrorResult(toolCall, $"Error: file not found '{editCall.file_path}'.");
+            }
+
+            string[] lines = System.IO.File.ReadAllLines(editCall.file_path);
+
+            if (startLine > lines.Length)
+            {
+                return CreateErrorResult(toolCall, $"Error: start_line {startLine} exceeds file length ({lines.Length} lines).");
+            }
+
+            int endIdx = Math.Min(endLine, lines.Length);
+            var newLines = new List<string>();
+            newLines.AddRange(lines.Take(startLine - 1));
+            newLines.Add(editCall.new_content);
+            newLines.AddRange(lines.Skip(endIdx));
+
+            System.IO.File.WriteAllLines(editCall.file_path, newLines);
+            return new ToolChatMessage(toolCall.Id, $"Successfully edited {editCall.file_path} (replaced lines {startLine}-{endLine}).");
         }
         catch (Exception ex)
         {
