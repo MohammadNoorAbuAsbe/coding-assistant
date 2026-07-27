@@ -518,7 +518,7 @@ public static class ResponseHandler
         if (matches.Count == 0) return null;
         if (matches.Count > 1) return null;
 
-        return BuildLineMatchResult(content, contentLines, oldLines, StripLine(oldLines[0]), lineOffsets, matches[0], oldString.Length, MatchStrategy.LineFuzzy);
+        return BuildLineMatchResult(content, contentLines, oldLines, NormalizeLine(oldLines[0]), lineOffsets, matches[0], oldString.Length, MatchStrategy.LineFuzzy);
     }
 
     private static (string[] Lines, int[] Offsets) SplitIntoLines(string text)
@@ -608,9 +608,13 @@ public static class ResponseHandler
 
         int absolutePos = lineOffsets[matchLine] + posInLine;
 
-        if (absolutePos + matchLength > content.Length) return null;
+        int lastLineIdx = matchLine + oldLines.Length - 1;
+        int endOfMatch = lineOffsets[lastLineIdx] + contentLines[lastLineIdx].Length;
+        int contentLength = endOfMatch - absolutePos;
 
-        string actual = content.Substring(absolutePos, matchLength);
+        if (absolutePos + contentLength > content.Length) return null;
+
+        string actual = content.Substring(absolutePos, contentLength);
         string actualFirstLine = actual.Split('\n')[0];
 
         bool firstLineMatches =
@@ -620,7 +624,7 @@ public static class ResponseHandler
 
         if (!firstLineMatches) return null;
 
-        return new MatchResult(absolutePos, matchLength, strategy);
+        return new MatchResult(absolutePos, contentLength, strategy);
     }
 
     private static int FindPositionInLine(string contentLine, string oldFirstLine, string oldFirstNormalized)
