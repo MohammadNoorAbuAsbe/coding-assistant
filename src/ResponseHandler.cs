@@ -445,7 +445,7 @@ public static class ResponseHandler
         LineFuzzy
     }
 
-    private record MatchResult(int Index, int Length, MatchStrategy Strategy);
+    private sealed record MatchResult(int Index, int Length, MatchStrategy Strategy);
 
     private static MatchResult? FindBestMatch(string content, string oldString)
     {
@@ -488,7 +488,7 @@ public static class ResponseHandler
         if (matches.Count == 0) return null;
         if (matches.Count > 1) return null;
 
-        return BuildLineMatchResult(content, contentLines, oldLines, oldNorm[0], lineOffsets, matches[0], oldString.Length, MatchStrategy.LineNormalized);
+        return BuildLineMatchResult(content, contentLines, oldLines, oldNorm[0], lineOffsets, matches[0], MatchStrategy.LineNormalized);
     }
 
     private static MatchResult? TryMatchLineFuzzy(string content, string oldString)
@@ -504,7 +504,7 @@ public static class ResponseHandler
         if (matches.Count == 0) return null;
         if (matches.Count > 1) return null;
 
-        return BuildLineMatchResult(content, contentLines, oldLines, NormalizeLine(oldLines[0]), lineOffsets, matches[0], oldString.Length, MatchStrategy.LineFuzzy);
+        return BuildLineMatchResult(content, contentLines, oldLines, NormalizeLine(oldLines[0]), lineOffsets, matches[0], MatchStrategy.LineFuzzy);
     }
 
     private static (string[] Lines, int[] Offsets) SplitIntoLines(string text)
@@ -578,16 +578,10 @@ public static class ResponseHandler
         if (line.Length > 0 && line[line.Length - 1] == '\r')
             line = line.Substring(0, line.Length - 1);
 
-        var sb = new System.Text.StringBuilder();
-        foreach (char c in line)
-        {
-            if (!char.IsWhiteSpace(c))
-                sb.Append(c);
-        }
-        return sb.ToString();
+        return string.Concat(line.Where(c => !char.IsWhiteSpace(c)));
     }
 
-    private static MatchResult? BuildLineMatchResult(string content, string[] contentLines, string[] oldLines, string oldFirstNormalized, int[] lineOffsets, int matchLine, int matchLength, MatchStrategy strategy)
+    private static MatchResult? BuildLineMatchResult(string content, string[] contentLines, string[] oldLines, string oldFirstNormalized, int[] lineOffsets, int matchLine, MatchStrategy strategy)
     {
         int posInLine = FindPositionInLine(contentLines[matchLine], oldLines[0], oldFirstNormalized);
         if (posInLine == -1) return null;
@@ -625,74 +619,39 @@ public static class ResponseHandler
         int normIdx = contentNorm.IndexOf(oldFirstNormalized, StringComparison.Ordinal);
         if (normIdx == -1) return -1;
 
+        return MapNormalizedIndexToOriginalPosition(contentLine, contentNorm, normIdx);
+    }
+
+    private static int MapNormalizedIndexToOriginalPosition(string contentLine, string contentNorm, int normIdx)
+    {
         int origPos = 0, normPos = 0;
         while (normPos < normIdx && origPos < contentLine.Length)
         {
             if (char.IsWhiteSpace(contentLine[origPos]))
             {
-                if (normPos < contentNorm.Length && contentNorm[normPos] == ' ')
-                    normPos++;
-                while (origPos < contentLine.Length && char.IsWhiteSpace(contentLine[origPos]))
-                    origPos++;
+                AdvanceOverWhitespace(contentLine, contentNorm, ref origPos, ref normPos);
             }
             else
             {
-                if (normPos < contentNorm.Length && contentLine[origPos] == contentNorm[normPos])
-                    normPos++;
-                origPos++;
+                AdvanceOverNormalCharacter(contentLine, contentNorm, ref origPos, ref normPos);
             }
         }
         return origPos;
     }
 
-    private static string NormalizeWhitespace(string text)
+    private static void AdvanceOverWhitespace(string contentLine, string contentNorm, ref int origPos, ref int normPos)
     {
-        var result = new System.Text.StringBuilder(text.Length);
-        bool lastWasSpace = false;
-
-        foreach (char c in text)
-        {
-            if (char.IsWhiteSpace(c))
-            {
-                if (!lastWasSpace)
-                {
-                    result.Append(' ');
-                    lastWasSpace = true;
-                }
-            }
-            else
-            {
-                result.Append(c);
-                lastWasSpace = false;
-            }
-        }
-
-        return result.ToString();
+        if (normPos < contentNorm.Length && contentNorm[normPos] == ' ')
+            normPos++;
+        while (origPos < contentLine.Length && char.IsWhiteSpace(contentLine[origPos]))
+            origPos++;
     }
 
-    private static int FindOriginalPosition(string original, string normalized, int normalizedIndex)
+    private static void AdvanceOverNormalCharacter(string contentLine, string contentNorm, ref int origPos, ref int normPos)
     {
-        int origPos = 0;
-        int normPos = 0;
-
-        while (normPos < normalizedIndex && origPos < original.Length)
-        {
-            if (char.IsWhiteSpace(original[origPos]))
-            {
-                if (normPos < normalized.Length && normalized[normPos] == ' ')
-                    normPos++;
-                while (origPos < original.Length && char.IsWhiteSpace(original[origPos]))
-                    origPos++;
-            }
-            else
-            {
-                if (normPos < normalized.Length && original[origPos] == normalized[normPos])
-                    normPos++;
-                origPos++;
-            }
-        }
-
-        return origPos;
+        if (normPos < contentNorm.Length && contentLine[origPos] == contentNorm[normPos])
+            normPos++;
+        origPos++;
     }
 
     private static string BuildRipgrepArguments(ToolHandler.GrepCall grepCall)

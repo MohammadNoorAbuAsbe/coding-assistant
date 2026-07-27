@@ -50,7 +50,7 @@ public static class Configuration
     {
         var builtIn = new Dictionary<string, ProviderConfig>
         {
-            ["ollama"] = new() { Id = "ollama", DisplayName = "Ollama (Local)", BaseUrl = "http://localhost:11434/v1", DefaultModel = "qwen3:8b" },
+            [OllamaName] = new() { Id = OllamaName, DisplayName = "Ollama (Local)", BaseUrl = "http://localhost:11434/v1", DefaultModel = "qwen3:8b" },
             ["openrouter"] = new() { Id = "openrouter", DisplayName = "OpenRouter (Cloud)", BaseUrl = "https://openrouter.ai/api/v1", DefaultModel = "openrouter/free", NeedsApiKey = true, ApiKeyEnvVar = "OPENROUTER_API_KEY", SiteUrlEnvVar = "OPENROUTER_SITE_URL", SiteNameEnvVar = "OPENROUTER_SITE_NAME" },
             ["openai"] = new() { Id = "openai", DisplayName = "OpenAI (Cloud)", BaseUrl = "https://api.openai.com/v1", DefaultModel = "gpt-4o", NeedsApiKey = true, ApiKeyEnvVar = "OPENAI_API_KEY" },
         };
@@ -80,7 +80,7 @@ public static class Configuration
         var envProvider = Environment.GetEnvironmentVariable("AI_PROVIDER");
         _provider = envProvider != null && Providers.ContainsKey(envProvider)
             ? envProvider
-            : "ollama";
+            : OllamaName;
         _model = Providers[_provider].DefaultModel;
     }
 
@@ -108,7 +108,7 @@ public static class Configuration
 
     public static void SetModel(string model) => _model = model;
 
-    public static string GetProvider() => _provider ?? "ollama";
+    public static string GetProvider() => _provider ?? OllamaName;
 
     public static string GetApiKey()
     {

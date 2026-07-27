@@ -110,8 +110,7 @@ public static class ChatOrchestrator
             if (!string.IsNullOrEmpty(toolUpdate.FunctionName)) acc.FunctionName = toolUpdate.FunctionName;
             if (toolUpdate.FunctionArgumentsUpdate != null)
             {
-                try { acc.Arguments += toolUpdate.FunctionArgumentsUpdate.ToString(); }
-                catch (ArgumentNullException) { }
+                acc.Arguments += toolUpdate.FunctionArgumentsUpdate.ToString();
             }
         }
     }
