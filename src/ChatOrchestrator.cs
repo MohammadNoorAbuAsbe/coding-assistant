@@ -108,7 +108,7 @@ public static class ChatOrchestrator
             var acc = accumulatedToolCalls[index];
             if (!string.IsNullOrEmpty(toolUpdate.ToolCallId)) acc.Id = toolUpdate.ToolCallId;
             if (!string.IsNullOrEmpty(toolUpdate.FunctionName)) acc.FunctionName = toolUpdate.FunctionName;
-            if (toolUpdate.FunctionArgumentsUpdate != null)
+            if (toolUpdate.FunctionArgumentsUpdate != null && toolUpdate.FunctionArgumentsUpdate.ToMemory().Length > 0)
             {
                 acc.Arguments += toolUpdate.FunctionArgumentsUpdate.ToString();
             }
