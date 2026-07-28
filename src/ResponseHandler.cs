@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using OpenAI.Chat;
+using ReverseMarkdown;
 
 namespace TerminalAiAssistant;
 
@@ -10,6 +11,13 @@ public static class ResponseHandler
     {
         PropertyNameCaseInsensitive = true
     };
+
+    private static readonly HttpClient WebClient = new()
+    {
+        Timeout = TimeSpan.FromSeconds(30)
+    };
+
+    private static readonly Converter HtmlToMarkdown = new();
 
     public static List<ChatMessage> ProcessToolCalls(ChatCompletion response)
     {
@@ -53,7 +61,8 @@ public static class ResponseHandler
             ToolHandler.BashFunctionName => ProcessBashCall(toolCall),
             ToolHandler.GlobFunctionName => ProcessGlobCall(toolCall),
             ToolHandler.GrepFunctionName => ProcessGrepCall(toolCall),
-            _ => CreateErrorResult(toolCall, $"Error: unknown function '{toolCall.FunctionName}'. Available functions: {ToolHandler.ReadFunctionName}, {ToolHandler.WriteFunctionName}, {ToolHandler.EditFunctionName}, {ToolHandler.EditLineFunctionName}, {ToolHandler.BashFunctionName}, {ToolHandler.GlobFunctionName}, {ToolHandler.GrepFunctionName}.")
+            ToolHandler.WebFetchFunctionName => ProcessWebFetchCall(toolCall),
+            _ => CreateErrorResult(toolCall, $"Error: unknown function '{toolCall.FunctionName}'. Available functions: {ToolHandler.ReadFunctionName}, {ToolHandler.WriteFunctionName}, {ToolHandler.EditFunctionName}, {ToolHandler.EditLineFunctionName}, {ToolHandler.BashFunctionName}, {ToolHandler.GlobFunctionName}, {ToolHandler.GrepFunctionName}, {ToolHandler.WebFetchFunctionName}.")
         };
     }
 
@@ -404,5 +413,49 @@ public static class ResponseHandler
 
                 return new ToolChatMessage(toolCall.Id, result);
             });
+    }
+
+    private static ToolChatMessage? ProcessWebFetchCall(ChatToolCall toolCall)
+    {
+        return ExecuteToolCall<ToolHandler.WebFetchCall>(
+            toolCall,
+            "Expected format: {\"url\": \"<url>\"}",
+            "fetching URL",
+            args =>
+            {
+                if (args.url == null)
+                {
+                    return CreateErrorResult(toolCall, "Error: WebFetch tool missing required parameter 'url'.");
+                }
+
+                var request = new HttpRequestMessage(HttpMethod.Get, args.url);
+                request.Headers.UserAgent.ParseAdd("TerminalAiAssistant/1.0");
+
+                var response = WebClient.Send(request);
+                response.EnsureSuccessStatusCode();
+
+                string contentType = response.Content.Headers.ContentType?.MediaType ?? "";
+                string raw = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+
+                string result = args.format switch
+                {
+                    "html" => raw,
+                    "text" => StripHtml(raw),
+                    _ when contentType.Contains("html") => HtmlToMarkdown.Convert(raw),
+                    _ => raw
+                };
+
+                int maxTokens = Configuration.GetMaxToolResultTokens();
+                result = ContextManager.TruncateToolResult(result, maxTokens);
+
+                return new ToolChatMessage(toolCall.Id, result);
+            });
+    }
+
+    private static string StripHtml(string html)
+    {
+        System.Text.RegularExpressions.Regex tagRegex = new("<[^>]+>", System.Text.RegularExpressions.RegexOptions.Compiled);
+        string text = tagRegex.Replace(html, "");
+        return System.Net.WebUtility.HtmlDecode(text).Trim();
     }
 }

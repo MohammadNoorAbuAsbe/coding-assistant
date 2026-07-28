@@ -12,6 +12,7 @@ public static class ToolHandler
     public const string BashFunctionName = "Bash";
     public const string GlobFunctionName = "Glob";
     public const string GrepFunctionName = "Grep";
+    public const string WebFetchFunctionName = "WebFetch";
 
     private const string ReadFunctionDescription = "Read and return the contents of a file";
     private const string WriteFunctionDescription = "Write content to a file";
@@ -20,6 +21,7 @@ public static class ToolHandler
     private const string BashFunctionDescription = "Execute a shell command";
     private const string GlobFunctionDescription = "Find files by glob pattern. Supports ** (any depth), * (wildcard), ? (single char), and {a,b} (alternation) patterns. Returns full paths of matching files, one per line.";
     private const string GrepFunctionDescription = "Search for patterns in files using ripgrep. Supports regex patterns. Returns matching lines with file paths and line numbers. Respects .gitignore by default, skips binary files.";
+    private const string WebFetchFunctionDescription = "Fetch and return the contents of a URL. Converts HTML pages to markdown for readability. Use this to read documentation, check API responses, or fetch web content.";
     private const string FilePathPropertyName = "file_path";
 
     private const string PatternParameter = "pattern";
@@ -69,6 +71,12 @@ public static class ToolHandler
                 ("case_insensitive", "Set to 'true' for case-insensitive search (default: false)"),
                 ("context_lines", "Number of context lines before and after each match (default: 0)")));
 
+    public static ChatTool CreateWebFetchTool() =>
+        CreateTool(WebFetchFunctionName, WebFetchFunctionDescription, ["url"],
+            StringProperties(
+                ("url", "The URL to fetch content from"),
+                ("format", "Response format: 'markdown' (default, converts HTML to markdown), 'text' (plain text), or 'html' (raw HTML). Default: markdown")));
+
     public static ChatCompletionOptions CreateCompletionOptions()
     {
         return new ChatCompletionOptions
@@ -81,7 +89,8 @@ public static class ToolHandler
                 CreateEditLineTool(),
                 CreateBashTool(),
                 CreateGlobTool(),
-                CreateGrepTool()
+                CreateGrepTool(),
+                CreateWebFetchTool()
             }
         };
     }
@@ -151,5 +160,11 @@ public static class ToolHandler
     {
         public required string pattern { get; set; }
         public string? path { get; set; }
+    }
+
+    public class WebFetchCall
+    {
+        public required string url { get; set; }
+        public string? format { get; set; }
     }
 }
