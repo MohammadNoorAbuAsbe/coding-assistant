@@ -178,6 +178,12 @@ public static class Configuration
         if (int.TryParse(value, out var result)) return result;
         return (int)(GetContextWindowSize() * 0.4);
     }
+
+    public static string GetTavilyApiKey()
+    {
+        return Environment.GetEnvironmentVariable("TAVILY_API_KEY")
+            ?? throw new InvalidOperationException("TAVILY_API_KEY is not set. Set it in a .env file (recommended) or as an environment variable. Get a key at https://tavily.com.");
+    }
 }
 
 internal class ConfigFile

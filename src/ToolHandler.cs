@@ -13,6 +13,7 @@ public static class ToolHandler
     public const string GlobFunctionName = "Glob";
     public const string GrepFunctionName = "Grep";
     public const string WebFetchFunctionName = "WebFetch";
+    public const string WebSearchFunctionName = "WebSearch";
 
     private const string ReadFunctionDescription = "Read and return the contents of a file";
     private const string WriteFunctionDescription = "Write content to a file";
@@ -22,6 +23,7 @@ public static class ToolHandler
     private const string GlobFunctionDescription = "Find files by glob pattern. Supports ** (any depth), * (wildcard), ? (single char), and {a,b} (alternation) patterns. Returns full paths of matching files, one per line.";
     private const string GrepFunctionDescription = "Search for patterns in files using ripgrep. Supports regex patterns. Returns matching lines with file paths and line numbers. Respects .gitignore by default, skips binary files.";
     private const string WebFetchFunctionDescription = "Fetch and return the contents of a URL. Converts HTML pages to markdown for readability. Use this to read documentation, check API responses, or fetch web content.";
+    private const string WebSearchFunctionDescription = "Search the web for current information using Tavily search. Returns a list of results with titles, URLs, and content snippets. Use this when you need up-to-date information, documentation, or answers not available in the local codebase.";
     private const string FilePathPropertyName = "file_path";
 
     private const string PatternParameter = "pattern";
@@ -77,6 +79,13 @@ public static class ToolHandler
                 ("url", "The URL to fetch content from"),
                 ("format", "Response format: 'markdown' (default, converts HTML to markdown), 'text' (plain text), or 'html' (raw HTML). Default: markdown")));
 
+    public static ChatTool CreateWebSearchTool() =>
+        CreateTool(WebSearchFunctionName, WebSearchFunctionDescription, ["query"],
+            StringProperties(
+                ("query", "The search query"),
+                ("max_results", "Maximum number of results to return (1-10, default: 5)"),
+                ("search_depth", "Search depth: 'basic' (faster, cheaper) or 'advanced' (more thorough). Default: basic")));
+
     public static ChatCompletionOptions CreateCompletionOptions()
     {
         return new ChatCompletionOptions
@@ -90,7 +99,8 @@ public static class ToolHandler
                 CreateBashTool(),
                 CreateGlobTool(),
                 CreateGrepTool(),
-                CreateWebFetchTool()
+                CreateWebFetchTool(),
+                CreateWebSearchTool()
             }
         };
     }
@@ -166,5 +176,12 @@ public static class ToolHandler
     {
         public required string url { get; set; }
         public string? format { get; set; }
+    }
+
+    public class WebSearchCall
+    {
+        public required string query { get; set; }
+        public string? max_results { get; set; }
+        public string? search_depth { get; set; }
     }
 }
