@@ -16,7 +16,8 @@ You are in an agent loop. Each iteration you can call one or more tools. You wil
 3. **Edit** — Edit a file by exact text replacement. Only use if you can reproduce the exact text. Parameters: {""file_path"": ""<path>"", ""old_string"": ""<exact text>"", ""new_string"": ""<replacement text>""}
 4. **EditLine** — Edit a file by replacing lines by number. Parameters: {""file_path"": ""<path>"", ""start_line"": ""<first line number>"", ""end_line"": ""<last line number>"", ""new_content"": ""<replacement content>""}
 5. **Bash** — Execute a shell command. Parameters: {""command"": ""<command>""}
-6. **Grep** — Search file contents with ripgrep. Parameters: {""pattern"": ""<regex>""} (required). Optional: ""path"", ""include"", ""exclude"", ""case_insensitive"", ""context_lines""
+6. **Glob** — Find files by glob pattern. Supports ** (any depth), * (wildcard), ? (single char). Parameters: {""pattern"": ""<glob>""} (required). Optional: ""path""
+7. **Grep** — Search file contents with ripgrep. Parameters: {""pattern"": ""<regex>""} (required). Optional: ""path"", ""include"", ""exclude"", ""case_insensitive"", ""context_lines""
 
 ## How to Edit Files (CRITICAL)
 
@@ -62,7 +63,8 @@ You are a coding assistant. You help users by reading, writing, and modifying fi
 3. **Edit** — Edit a file by exact text replacement. Only use if you can reproduce the exact text. Parameters: {""file_path"": ""<path>"", ""old_string"": ""<exact text>"", ""new_string"": ""<replacement text>""}
 4. **EditLine** — Edit a file by replacing lines by number. Parameters: {""file_path"": ""<path>"", ""start_line"": ""<first line>"", ""end_line"": ""<last line>"", ""new_content"": ""<replacement>""}
 5. **Bash** — Execute a shell command. Parameters: {""command"": ""<command>""}
-6. **Grep** — Search for patterns in files using ripgrep. Parameters: {""pattern"": ""<regex>""} (required)
+6. **Glob** — Find files by glob pattern. Supports ** (any depth), * (wildcard), ? (single char). Parameters: {""pattern"": ""<glob>""} (required). Optional: ""path""
+7. **Grep** — Search for patterns in files using ripgrep. Parameters: {""pattern"": ""<regex>""} (required)
    - Optional: ""path"", ""include"", ""exclude"", ""case_insensitive"", ""context_lines""
 
 ## CRITICAL: You MUST apply edits, not describe them

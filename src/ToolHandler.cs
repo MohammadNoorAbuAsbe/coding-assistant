@@ -10,6 +10,7 @@ public static class ToolHandler
     public const string EditFunctionName = "Edit";
     public const string EditLineFunctionName = "EditLine";
     public const string BashFunctionName = "Bash";
+    public const string GlobFunctionName = "Glob";
     public const string GrepFunctionName = "Grep";
 
     private const string ReadFunctionDescription = "Read and return the contents of a file";
@@ -17,6 +18,7 @@ public static class ToolHandler
     private const string EditFunctionDescription = "Edit a file by performing an exact string replacement. Use this to make targeted changes instead of rewriting the entire file. Provide the exact old string to find and the new string to replace it with.";
     private const string EditLineFunctionDescription = "Edit a file by replacing lines by line number. Use the Read tool first to see line numbers. Replace lines start_line through end_line (inclusive) with new_content. Use this when you cannot reproduce exact text for the Edit tool.";
     private const string BashFunctionDescription = "Execute a shell command";
+    private const string GlobFunctionDescription = "Find files by glob pattern. Supports ** (any depth), * (wildcard), ? (single char), and {a,b} (alternation) patterns. Returns full paths of matching files, one per line.";
     private const string GrepFunctionDescription = "Search for patterns in files using ripgrep. Supports regex patterns. Returns matching lines with file paths and line numbers. Respects .gitignore by default, skips binary files.";
     private const string FilePathPropertyName = "file_path";
 
@@ -50,6 +52,12 @@ public static class ToolHandler
         CreateTool(BashFunctionName, BashFunctionDescription, ["command"],
             StringProperties(("command", "The command to execute")));
 
+    public static ChatTool CreateGlobTool() =>
+        CreateTool(GlobFunctionName, GlobFunctionDescription, ["pattern"],
+            StringProperties(
+                ("pattern", "Glob pattern to search for (e.g., '**/*.cs', 'src/**/*.ts', '*.json'). Supports ** (any directory depth), * (wildcard), ? (single character), and {a,b} (alternation)."),
+                ("path", "Root directory to search in (defaults to current working directory)")));
+
     public static ChatTool CreateGrepTool() =>
         CreateTool(GrepFunctionName, GrepFunctionDescription, ["pattern"],
             StringProperties(
@@ -71,6 +79,7 @@ public static class ToolHandler
                 CreateEditTool(),
                 CreateEditLineTool(),
                 CreateBashTool(),
+                CreateGlobTool(),
                 CreateGrepTool()
             }
         };
@@ -135,5 +144,11 @@ public static class ToolHandler
         public string? exclude { get; set; }
         public string? case_insensitive { get; set; }
         public string? context_lines { get; set; }
+    }
+
+    public class GlobCall
+    {
+        public required string pattern { get; set; }
+        public string? path { get; set; }
     }
 }

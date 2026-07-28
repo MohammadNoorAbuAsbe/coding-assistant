@@ -51,8 +51,9 @@ public static class ResponseHandler
             ToolHandler.EditFunctionName => ProcessEditFileCall(toolCall),
             ToolHandler.EditLineFunctionName => ProcessEditLineCall(toolCall),
             ToolHandler.BashFunctionName => ProcessBashCall(toolCall),
+            ToolHandler.GlobFunctionName => ProcessGlobCall(toolCall),
             ToolHandler.GrepFunctionName => ProcessGrepCall(toolCall),
-            _ => CreateErrorResult(toolCall, $"Error: unknown function '{toolCall.FunctionName}'. Available functions: {ToolHandler.ReadFunctionName}, {ToolHandler.WriteFunctionName}, {ToolHandler.EditFunctionName}, {ToolHandler.EditLineFunctionName}, {ToolHandler.BashFunctionName}, {ToolHandler.GrepFunctionName}.")
+            _ => CreateErrorResult(toolCall, $"Error: unknown function '{toolCall.FunctionName}'. Available functions: {ToolHandler.ReadFunctionName}, {ToolHandler.WriteFunctionName}, {ToolHandler.EditFunctionName}, {ToolHandler.EditLineFunctionName}, {ToolHandler.BashFunctionName}, {ToolHandler.GlobFunctionName}, {ToolHandler.GrepFunctionName}.")
         };
     }
 
@@ -299,6 +300,28 @@ public static class ResponseHandler
                 {
                     result = $"Exit code: {process.ExitCode}\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}";
                 }
+
+                int maxTokens = Configuration.GetMaxToolResultTokens();
+                result = ContextManager.TruncateToolResult(result, maxTokens);
+
+                return new ToolChatMessage(toolCall.Id, result);
+            });
+    }
+
+    private static ToolChatMessage? ProcessGlobCall(ChatToolCall toolCall)
+    {
+        return ExecuteToolCall<ToolHandler.GlobCall>(
+            toolCall,
+            "Expected format: {\"pattern\": \"<glob>\", \"path\": \"<directory>\"}",
+            "running glob",
+            args =>
+            {
+                if (args.pattern == null)
+                {
+                    return CreateErrorResult(toolCall, "Error: Glob tool missing required parameter 'pattern'.");
+                }
+
+                string result = GlobHelper.FindFiles(args.pattern, args.path);
 
                 int maxTokens = Configuration.GetMaxToolResultTokens();
                 result = ContextManager.TruncateToolResult(result, maxTokens);
