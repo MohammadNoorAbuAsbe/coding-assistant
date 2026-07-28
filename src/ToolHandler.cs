@@ -22,7 +22,8 @@ public static class ToolHandler
     private const string GrepFunctionDescription = "Search for patterns in files using ripgrep. Supports regex patterns. Returns matching lines with file paths and line numbers. Respects .gitignore by default, skips binary files.";
     private const string FilePathPropertyName = "file_path";
 
-
+    private const string PatternParameter = "pattern";
+    
     public static ChatTool CreateReadTool() =>
         CreateTool(ReadFunctionName, ReadFunctionDescription, [FilePathPropertyName],
             StringProperties((FilePathPropertyName, "The path to the file to read")));
@@ -53,15 +54,15 @@ public static class ToolHandler
             StringProperties(("command", "The command to execute")));
 
     public static ChatTool CreateGlobTool() =>
-        CreateTool(GlobFunctionName, GlobFunctionDescription, ["pattern"],
+        CreateTool(GlobFunctionName, GlobFunctionDescription, [PatternParameter],
             StringProperties(
-                ("pattern", "Glob pattern to search for (e.g., '**/*.cs', 'src/**/*.ts', '*.json'). Supports ** (any directory depth), * (wildcard), ? (single character), and {a,b} (alternation)."),
+                (PatternParameter, "Glob pattern to search for (e.g., '**/*.cs', 'src/**/*.ts', '*.json'). Supports ** (any directory depth), * (wildcard), ? (single character), and {a,b} (alternation)."),
                 ("path", "Root directory to search in (defaults to current working directory)")));
 
     public static ChatTool CreateGrepTool() =>
-        CreateTool(GrepFunctionName, GrepFunctionDescription, ["pattern"],
+        CreateTool(GrepFunctionName, GrepFunctionDescription, [PatternParameter],
             StringProperties(
-                ("pattern", "Regex pattern to search for (e.g., 'TODO', 'function\\s+\\w+', '\\.cs$')"),
+                (PatternParameter, "Regex pattern to search for (e.g., 'TODO', 'function\\s+\\w+', '\\.cs$')"),
                 ("path", "Directory or file path to search (defaults to current directory)"),
                 ("include", "File glob pattern to include (e.g., '*.cs', '*.py', '*.js')"),
                 ("exclude", "Glob pattern to exclude (e.g., 'node_modules/**', '*.min.js')"),
