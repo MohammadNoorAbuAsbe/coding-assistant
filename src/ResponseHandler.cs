@@ -1,23 +1,15 @@
 using System.Diagnostics;
 using System.Text.Json;
 using OpenAI.Chat;
-using ReverseMarkdown;
 
 namespace TerminalAiAssistant;
 
 public static class ResponseHandler
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    internal static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
     };
-
-    private static readonly HttpClient WebClient = new()
-    {
-        Timeout = TimeSpan.FromSeconds(30)
-    };
-
-    private static readonly Converter HtmlToMarkdown = new();
 
     public static List<ChatMessage> ProcessToolCalls(ChatCompletion response)
     {
@@ -61,19 +53,19 @@ public static class ResponseHandler
             ToolHandler.BashFunctionName => ProcessBashCall(toolCall),
             ToolHandler.GlobFunctionName => ProcessGlobCall(toolCall),
             ToolHandler.GrepFunctionName => ProcessGrepCall(toolCall),
-            ToolHandler.WebFetchFunctionName => ProcessWebFetchCall(toolCall),
-            ToolHandler.WebSearchFunctionName => ProcessWebSearchCall(toolCall),
+            ToolHandler.WebFetchFunctionName => WebToolHandlers.ProcessWebFetchCall(toolCall),
+            ToolHandler.WebSearchFunctionName => WebToolHandlers.ProcessWebSearchCall(toolCall),
             _ => CreateErrorResult(toolCall, $"Error: unknown function '{toolCall.FunctionName}'. Available functions: {ToolHandler.ReadFunctionName}, {ToolHandler.WriteFunctionName}, {ToolHandler.EditFunctionName}, {ToolHandler.EditLineFunctionName}, {ToolHandler.BashFunctionName}, {ToolHandler.GlobFunctionName}, {ToolHandler.GrepFunctionName}, {ToolHandler.WebFetchFunctionName}, {ToolHandler.WebSearchFunctionName}.")
         };
     }
 
-    private static ToolChatMessage CreateErrorResult(ChatToolCall toolCall, string errorMessage)
+    internal static ToolChatMessage CreateErrorResult(ChatToolCall toolCall, string errorMessage)
     {
         Console.Error.WriteLine($"[tool error] {errorMessage}");
         return new ToolChatMessage(toolCall.Id, errorMessage);
     }
 
-    private static T? DeserializeToolArguments<T>(ChatToolCall toolCall) where T : class
+    internal static T? DeserializeToolArguments<T>(ChatToolCall toolCall) where T : class
     {
         if (toolCall.FunctionArguments == null)
         {
@@ -90,7 +82,7 @@ public static class ResponseHandler
         }
     }
 
-    private static ToolChatMessage? ExecuteToolCall<T>(
+    internal static ToolChatMessage? ExecuteToolCall<T>(
         ChatToolCall toolCall,
         string formatError,
         string errorPrefix,
@@ -416,150 +408,4 @@ public static class ResponseHandler
             });
     }
 
-    private static ToolChatMessage? ProcessWebFetchCall(ChatToolCall toolCall)
-    {
-        return ExecuteToolCall<ToolHandler.WebFetchCall>(
-            toolCall,
-            "Expected format: {\"url\": \"<url>\"}",
-            "fetching URL",
-            args =>
-            {
-                if (args.url == null)
-                {
-                    return CreateErrorResult(toolCall, "Error: WebFetch tool missing required parameter 'url'.");
-                }
-
-                var request = new HttpRequestMessage(HttpMethod.Get, args.url);
-                request.Headers.UserAgent.ParseAdd("TerminalAiAssistant/1.0");
-
-                var response = WebClient.Send(request);
-                response.EnsureSuccessStatusCode();
-
-                string contentType = response.Content.Headers.ContentType?.MediaType ?? "";
-                string raw = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-
-                string result = args.format switch
-                {
-                    "html" => raw,
-                    "text" => StripHtml(raw),
-                    _ when contentType.Contains("html") => HtmlToMarkdown.Convert(raw),
-                    _ => raw
-                };
-
-                int maxTokens = Configuration.GetMaxToolResultTokens();
-                result = ContextManager.TruncateToolResult(result, maxTokens);
-
-                return new ToolChatMessage(toolCall.Id, result);
-            });
-    }
-
-    private static ToolChatMessage? ProcessWebSearchCall(ChatToolCall toolCall)
-    {
-        return ExecuteToolCall<ToolHandler.WebSearchCall>(
-            toolCall,
-            "Expected format: {\"query\": \"<search query>\"}",
-            "searching web",
-            args =>
-            {
-                if (args.query == null)
-                {
-                    return CreateErrorResult(toolCall, "Error: WebSearch tool missing required parameter 'query'.");
-                }
-
-                string apiKey = Configuration.GetTavilyApiKey();
-
-                int maxResults = 5;
-                if (args.max_results != null)
-                {
-                    int.TryParse(args.max_results, out maxResults);
-                    maxResults = Math.Clamp(maxResults, 1, 10);
-                }
-
-                string depth = args.search_depth switch
-                {
-                    "advanced" => "advanced",
-                    _ => "basic"
-                };
-
-                var body = new
-                {
-                    api_key = apiKey,
-                    query = args.query,
-                    max_results = maxResults,
-                    search_depth = depth
-                };
-
-                var request = new HttpRequestMessage(HttpMethod.Post, "https://api.tavily.com/search");
-                request.Content = new StringContent(
-                    JsonSerializer.Serialize(body, JsonOptions),
-                    System.Text.Encoding.UTF8,
-                    "application/json");
-
-                var response = WebClient.Send(request);
-                response.EnsureSuccessStatusCode();
-
-                string json = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-
-                var tavilyResponse = JsonSerializer.Deserialize<TavilyResponse>(json, JsonOptions);
-                if (tavilyResponse == null)
-                {
-                    return CreateErrorResult(toolCall, "Error: received empty response from Tavily search API.");
-                }
-
-                var sb = new System.Text.StringBuilder();
-
-                if (!string.IsNullOrWhiteSpace(tavilyResponse.answer))
-                {
-                    sb.AppendLine($"Answer: {tavilyResponse.answer}");
-                    sb.AppendLine();
-                }
-
-                if (tavilyResponse.results == null || tavilyResponse.results.Count == 0)
-                {
-                    sb.Append("No results found.");
-                }
-                else
-                {
-                    for (int i = 0; i < tavilyResponse.results.Count; i++)
-                    {
-                        var r = tavilyResponse.results[i];
-                        sb.AppendLine($"Title: {r.title}");
-                        sb.AppendLine($"URL: {r.url}");
-                        sb.AppendLine($"Content: {r.content}");
-                        if (i < tavilyResponse.results.Count - 1)
-                        {
-                            sb.AppendLine("---");
-                        }
-                    }
-                }
-
-                string result = sb.ToString();
-
-                int maxTokens = Configuration.GetMaxToolResultTokens();
-                result = ContextManager.TruncateToolResult(result, maxTokens);
-
-                return new ToolChatMessage(toolCall.Id, result);
-            });
-    }
-
-    private static string StripHtml(string html)
-    {
-        System.Text.RegularExpressions.Regex tagRegex = new("<[^>]+>", System.Text.RegularExpressions.RegexOptions.Compiled);
-        string text = tagRegex.Replace(html, "");
-        return System.Net.WebUtility.HtmlDecode(text).Trim();
-    }
-
-    private class TavilyResponse
-    {
-        public string? answer { get; set; }
-        public List<TavilyResult>? results { get; set; }
-    }
-
-    private class TavilyResult
-    {
-        public string? title { get; set; }
-        public string? url { get; set; }
-        public string? content { get; set; }
-        public double? score { get; set; }
-    }
 }
