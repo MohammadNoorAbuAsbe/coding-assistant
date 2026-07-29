@@ -32,10 +32,12 @@ internal static class QuestionHandler
     private static string AskUser(string question, string? header, List<ToolHandler.QuestionOption> options, bool allowCustom)
     {
         Console.Error.WriteLine();
-        Console.Error.Write("[Question]");
+        using (ConsoleStyler.WithColor(ConsoleColor.Magenta))
+            Console.Error.Write("[Question]");
         if (!string.IsNullOrEmpty(header))
         {
-            Console.Error.Write($" {header}");
+            using (ConsoleStyler.WithColor(ConsoleColor.Yellow))
+                Console.Error.Write($" {header}");
         }
         Console.Error.WriteLine();
         Console.Error.WriteLine(question);

@@ -9,7 +9,7 @@ public static class MenuHandler
         var list = providers.Values.ToList();
         var keys = providers.Keys.ToList();
 
-        Console.WriteLine("\nSelect provider:");
+        ConsoleStyler.WriteLine("\nSelect provider:", ConsoleColor.Cyan);
         for (int i = 0; i < list.Count; i++)
         {
             Console.WriteLine($"  {i + 1}. {list[i].DisplayName}");
@@ -44,7 +44,7 @@ public static class MenuHandler
             return models[0];
         }
 
-        Console.WriteLine("\nSelect model:");
+        ConsoleStyler.WriteLine("\nSelect model:", ConsoleColor.Cyan);
         for (int i = 0; i < models.Count; i++)
         {
             var note = models[i] == config.DefaultModel ? " (default)" : "";
@@ -57,7 +57,7 @@ public static class MenuHandler
 
     public static string GetPrompt()
     {
-        Console.Write("> ");
+        ConsoleStyler.Write("> ", ConsoleColor.Green);
         var prompt = Console.ReadLine();
         return prompt?.Trim() ?? "";
     }
@@ -100,11 +100,11 @@ public static class MenuHandler
     {
         while (true)
         {
-            Console.Write($"Enter choice ({min}-{max}): ");
+            ConsoleStyler.Write($"Enter choice ({min}-{max}): ", ConsoleColor.Yellow);
             var input = Console.ReadLine();
             if (int.TryParse(input, out int choice) && choice >= min && choice <= max)
                 return choice;
-            Console.WriteLine($"Invalid input. Please enter a number between {min} and {max}.");
+            ConsoleStyler.WriteLine($"Invalid input. Please enter a number between {min} and {max}.", ConsoleColor.Red);
         }
     }
 }

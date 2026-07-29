@@ -18,7 +18,8 @@ public static class ChatOrchestrator
         if (!_sessionStarted)
         {
             _messages = [new SystemChatMessage(SystemPrompt.GetPrompt(provider))];
-            await Console.Error.WriteLineAsync($"{provider} · {Configuration.GetModel()} · ctx={contextWindowSize} · max_iter={maxIterations}");
+            using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
+                Console.Error.WriteLine($"{provider} · {Configuration.GetModel()} · ctx={contextWindowSize} · max_iter={maxIterations}");
             _sessionStarted = true;
         }
 
@@ -26,7 +27,10 @@ public static class ChatOrchestrator
 
         for (int iteration = 0; iteration < maxIterations; iteration++)
         {
-            await Console.Error.WriteLineAsync($"[{iteration + 1}/{maxIterations}] Thinking...");
+            using (ConsoleStyler.WithColor(ConsoleColor.Yellow))
+                Console.Error.Write($"[{iteration + 1}/{maxIterations}]");
+            using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
+                Console.Error.WriteLine(" Thinking...");
 
             var (accumulatedToolCalls, responseContent) = await ProcessStreamingUpdates(client, _messages, options);
 
@@ -101,7 +105,12 @@ public static class ChatOrchestrator
                 };
                 if (!string.IsNullOrEmpty(toolUpdate.FunctionName))
                 {
-                    Console.Error.Write($"\n[Tool: {toolUpdate.FunctionName}] ");
+                    using (ConsoleStyler.WithColor(ConsoleColor.Magenta))
+                        Console.Error.Write($"\n[Tool: ");
+                    using (ConsoleStyler.WithColor(ConsoleColor.Yellow))
+                        Console.Error.Write($"{toolUpdate.FunctionName}");
+                    using (ConsoleStyler.WithColor(ConsoleColor.Magenta))
+                        Console.Error.Write($"] ");
                 }
             }
 
@@ -113,7 +122,12 @@ public static class ChatOrchestrator
                 acc.FunctionName = toolUpdate.FunctionName;
                 if (wasEmpty)
                 {
-                    Console.Error.Write($"\n[Tool: {toolUpdate.FunctionName}] ");
+                    using (ConsoleStyler.WithColor(ConsoleColor.Magenta))
+                        Console.Error.Write($"\n[Tool: ");
+                    using (ConsoleStyler.WithColor(ConsoleColor.Yellow))
+                        Console.Error.Write($"{toolUpdate.FunctionName}");
+                    using (ConsoleStyler.WithColor(ConsoleColor.Magenta))
+                        Console.Error.Write($"] ");
                 }
             }
             if (toolUpdate.FunctionArgumentsUpdate != null && toolUpdate.FunctionArgumentsUpdate.ToMemory().Length > 0)
@@ -150,7 +164,8 @@ public static class ChatOrchestrator
 
         messages.Add(new AssistantChatMessage(assistantToolCalls));
 
-        Console.Error.WriteLine("\n— Results —");
+        using (ConsoleStyler.WithColor(ConsoleColor.Blue))
+            Console.Error.WriteLine("\n— Results —");
         var toolResultMessages = new List<ChatMessage>();
         foreach (var toolCall in assistantToolCalls)
         {
@@ -168,11 +183,17 @@ public static class ChatOrchestrator
                     {
                         string tokensStr = $"{ContextManager.EstimateTokens(content):N0}";
                         string argPart = !string.IsNullOrEmpty(primaryArg) ? $" — {TruncateForDisplay(primaryArg, 80)}" : "";
-                        Console.Error.WriteLine($"  {symbol} {toolCall.FunctionName} ({tokensStr} tok){argPart}");
+                        using (ConsoleStyler.WithColor(ConsoleColor.Green))
+                            Console.Error.Write($"  {symbol} ");
+                        using (ConsoleStyler.WithColor(ConsoleColor.Yellow))
+                            Console.Error.Write(toolCall.FunctionName);
+                        using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
+                            Console.Error.WriteLine($" ({tokensStr} tok){argPart}");
                     }
                     else
                     {
-                        Console.Error.WriteLine($"  {symbol} {toolCall.FunctionName} → {TruncateForDisplay(content, 80)}");
+                        using (ConsoleStyler.WithColor(ConsoleColor.Red))
+                            Console.Error.WriteLine($"  {symbol} {toolCall.FunctionName} → {TruncateForDisplay(content, 80)}");
                     }
                 }
             }
