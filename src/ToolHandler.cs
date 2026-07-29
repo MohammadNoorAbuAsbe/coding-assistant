@@ -15,6 +15,8 @@ public static class ToolHandler
     public const string WebFetchFunctionName = "WebFetch";
     public const string WebSearchFunctionName = "WebSearch";
     public const string QuestionFunctionName = "Question";
+    public const string TaskFunctionName = "Task";
+    public const string TodoWriteFunctionName = "TodoWrite";
 
     private const string ReadFunctionDescription = "Read and return the contents of a file";
     private const string WriteFunctionDescription = "Write content to a file";
@@ -26,6 +28,8 @@ public static class ToolHandler
     private const string WebFetchFunctionDescription = "Fetch and return the contents of a URL. Converts HTML pages to markdown for readability. Use this to read documentation, check API responses, or fetch web content.";
     private const string WebSearchFunctionDescription = "Search the web for current information using Tavily search. Returns a list of results with titles, URLs, and content snippets. Use this when you need up-to-date information, documentation, or answers not available in the local codebase.";
     private const string QuestionFunctionDescription = "Ask the user a question with multiple-choice options. Use this when you are uncertain about an approach, need a decision, or the task is ambiguous. Present 2-6 clear options with short labels and descriptions. Do not guess when you can ask.";
+    private const string TaskFunctionDescription = "Launch a sub-agent to handle a complex subtask. The sub-agent has access to all the same tools (Read, Write, Edit, EditLine, Bash, Glob, Grep, WebFetch, WebSearch, Question). Use this when a task is complex enough to warrant a dedicated sub-agent — it will run independently and return its result. The sub-agent cannot launch further sub-agents.";
+    private const string TodoWriteFunctionDescription = "Create and maintain a structured task list for the current session. Tracks progress, organizes multi-step work. Call this at the START of complex multi-step tasks to plan, and UPDATE it as you complete steps. Each call replaces the entire list — pass ALL items including completed ones.";
     private const string FilePathPropertyName = "file_path";
 
     private const string PatternParameter = "pattern";
@@ -113,6 +117,34 @@ public static class ToolHandler
                 ["allow_custom"] = StringProp("Set to 'true' to let the user type a custom answer (default: 'false')")
             });
 
+    public static ChatTool CreateTaskTool() =>
+        CreateTool(TaskFunctionName, TaskFunctionDescription, ["description"],
+            StringProperties(
+                ("description", "The task description for the sub-agent. Be clear, specific, and include all necessary context from the current session."),
+                ("subagent_type", "Optional sub-agent type (default: 'general'). Reserved for future use.")));
+
+    public static ChatTool CreateTodoWriteTool() =>
+        CreateTool(TodoWriteFunctionName, TodoWriteFunctionDescription, ["todos"],
+            new Dictionary<string, object>
+            {
+                ["todos"] = new Dictionary<string, object>
+                {
+                    ["type"] = "array",
+                    ["description"] = "Task list items",
+                    ["items"] = new Dictionary<string, object>
+                    {
+                        ["type"] = "object",
+                        ["required"] = new[] { "content" },
+                        ["properties"] = new Dictionary<string, object>
+                        {
+                            ["content"] = StringProp("Brief description of the task"),
+                            ["status"] = StringProp("Status: 'pending', 'in_progress', 'completed', or 'cancelled' (default: 'pending')"),
+                            ["priority"] = StringProp("Priority: 'high', 'medium', or 'low' (default: 'medium')")
+                        }
+                    }
+                }
+            });
+
     public static ChatCompletionOptions CreateCompletionOptions()
     {
         return new ChatCompletionOptions
@@ -128,7 +160,30 @@ public static class ToolHandler
                 CreateGrepTool(),
                 CreateWebFetchTool(),
                 CreateWebSearchTool(),
-                CreateQuestionTool()
+                CreateQuestionTool(),
+                CreateTaskTool(),
+                CreateTodoWriteTool()
+            }
+        };
+    }
+
+    public static ChatCompletionOptions CreateSubAgentCompletionOptions()
+    {
+        return new ChatCompletionOptions
+        {
+            Tools =
+            {
+                CreateReadTool(),
+                CreateWriteTool(),
+                CreateEditTool(),
+                CreateEditLineTool(),
+                CreateBashTool(),
+                CreateGlobTool(),
+                CreateGrepTool(),
+                CreateWebFetchTool(),
+                CreateWebSearchTool(),
+                CreateQuestionTool(),
+                CreateTodoWriteTool()
             }
         };
     }
@@ -232,5 +287,16 @@ public static class ToolHandler
     {
         public required string label { get; set; }
         public string? description { get; set; }
+    }
+
+    public class TaskCall
+    {
+        public required string description { get; set; }
+        public string? subagent_type { get; set; }
+    }
+
+    public class TodoWriteCall
+    {
+        public required List<TodoItem> todos { get; set; }
     }
 }

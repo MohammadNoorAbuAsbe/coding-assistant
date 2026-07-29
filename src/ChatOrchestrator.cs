@@ -24,7 +24,47 @@ public static class ChatOrchestrator
         }
 
         _messages!.Add(new UserChatMessage(prompt));
+        await RunAgentLoop(client, _messages, options, provider, maxIterations, contextWindowSize);
+        _messages = ContextManager.TruncateMessages(_messages, contextWindowSize);
+    }
 
+    internal static async Task<string> RunSubAgent(ChatClient client, List<ChatMessage> messages, int maxIterations, int contextWindowSize)
+    {
+        var options = ToolHandler.CreateSubAgentCompletionOptions();
+        string? finalResponse = null;
+
+        for (int iteration = 0; iteration < maxIterations; iteration++)
+        {
+            using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
+                Console.Error.WriteLine($"  [sub-agent {iteration + 1}/{maxIterations}]");
+
+            var (accumulatedToolCalls, responseContent) = await ProcessStreamingUpdates(client, messages, options);
+
+            if (accumulatedToolCalls.Count == 0)
+            {
+                if (!string.IsNullOrEmpty(responseContent))
+                {
+                    messages.Add(new AssistantChatMessage(responseContent));
+                    finalResponse = responseContent;
+                }
+                break;
+            }
+
+            messages = FinalizeToolCalls(accumulatedToolCalls, messages, contextWindowSize);
+        }
+
+        messages = ContextManager.TruncateMessages(messages, contextWindowSize);
+        return finalResponse ?? "Sub-agent completed without producing a text response.";
+    }
+
+    private static async Task RunAgentLoop(
+        ChatClient client,
+        List<ChatMessage> messages,
+        ChatCompletionOptions options,
+        string provider,
+        int maxIterations,
+        int contextWindowSize)
+    {
         for (int iteration = 0; iteration < maxIterations; iteration++)
         {
             using (ConsoleStyler.WithColor(ConsoleColor.Yellow))
@@ -32,7 +72,7 @@ public static class ChatOrchestrator
             using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
                 Console.Error.WriteLine(" Thinking...");
 
-            var (accumulatedToolCalls, responseContent) = await ProcessStreamingUpdates(client, _messages, options);
+            var (accumulatedToolCalls, responseContent) = await ProcessStreamingUpdates(client, messages, options);
 
             if (accumulatedToolCalls.Count == 0)
             {
@@ -42,21 +82,19 @@ public static class ChatOrchestrator
 
                     if (LooksLikeSkippedEdit(responseContent) && iteration < maxIterations - 1)
                     {
-                        _messages.Add(new AssistantChatMessage(responseContent));
-                        _messages.Add(new UserChatMessage("You described the code changes above but did not apply them. Execute the necessary Edit or EditLine tool calls now to actually make these changes to the files. Do not repeat the descriptions — just apply them."));
+                        messages.Add(new AssistantChatMessage(responseContent));
+                        messages.Add(new UserChatMessage("You described the code changes above but did not apply them. Execute the necessary Edit or EditLine tool calls now to actually make these changes to the files. Do not repeat the descriptions — just apply them."));
                         continue;
                     }
 
-                    _messages.Add(new AssistantChatMessage(responseContent));
+                    messages.Add(new AssistantChatMessage(responseContent));
                 }
                 break;
             }
 
-            await Console.Error.WriteLineAsync();  // newline after streaming
-            _messages = FinalizeToolCalls(accumulatedToolCalls, _messages, contextWindowSize);
+            await Console.Error.WriteLineAsync();
+            messages = FinalizeToolCalls(accumulatedToolCalls, messages, contextWindowSize);
         }
-
-        _messages = ContextManager.TruncateMessages(_messages, contextWindowSize);
     }
 
     private static async Task<(Dictionary<int, ToolCallAccumulator> ToolCalls, string? Content)> ProcessStreamingUpdates(

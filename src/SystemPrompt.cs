@@ -12,7 +12,9 @@ public static class SystemPrompt
 7. **Grep** — Search file contents with ripgrep (regex). Parameters: {""pattern"": ""<regex>""} (required). Optional: ""path"", ""include"", ""exclude"", ""case_insensitive"", ""context_lines""
 8. **Question** — Ask the user a question with multiple-choice options when you need a decision or clarification. Parameters: {""question"": ""<text>"", ""options"": [{""label"": ""<text>"", ""description"": ""<text>""}]} (required). Optional: ""header"", ""allow_custom"": ""true"".
 9. **WebFetch** — Fetch and return the contents of a URL. Converts HTML pages to markdown. Parameters: {""url"": ""<url>""} (required). Optional: ""format"" (""markdown"", ""text"", ""html"", default ""markdown"").
-10. **WebSearch** — Search the web for current information using Tavily. Parameters: {""query"": ""<query>""} (required). Optional: ""max_results"" (1-10), ""search_depth"" (""basic""/""advanced"").";
+10. **WebSearch** — Search the web for current information using Tavily. Parameters: {""query"": ""<query>""} (required). Optional: ""max_results"" (1-10), ""search_depth"" (""basic""/""advanced"").
+11. **Task** — Launch a sub-agent for complex subtasks. The sub-agent runs independently with all tools and returns its result. Use for multi-step work that can be delegated. Parameters: {""description"": ""<task>""} (required). Optional: ""subagent_type"".
+12. **TodoWrite** — Create and manage a structured task list. Call at the start of complex tasks to plan, and update as you complete steps. Parameters: {""todos"": [{""content"": ""..."", ""status"": ""..."", ""priority"": ""...""}]}.";
 
     private const string ApplyEditsSection = @"
 ## CRITICAL: You MUST apply edits, not describe them
