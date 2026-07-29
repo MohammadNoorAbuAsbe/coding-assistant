@@ -4,6 +4,9 @@ namespace TerminalAiAssistant;
 
 public static class ChatOrchestrator
 {
+    private static List<ChatMessage>? _messages;
+    private static bool _sessionStarted;
+
     public static async Task Run(string prompt)
     {
         var client = ChatService.CreateClient();
@@ -11,16 +14,21 @@ public static class ChatOrchestrator
         var provider = Configuration.GetProvider();
         var maxIterations = Configuration.GetMaxIterations();
         var contextWindowSize = Configuration.GetContextWindowSize();
-        var systemMessage = new SystemChatMessage(SystemPrompt.GetPrompt(provider));
-        List<ChatMessage> messages = [systemMessage, new UserChatMessage(prompt)];
 
-        await Console.Error.WriteLineAsync($"{provider} · {Configuration.GetModel()} · ctx={contextWindowSize} · max_iter={maxIterations}");
+        if (!_sessionStarted)
+        {
+            _messages = [new SystemChatMessage(SystemPrompt.GetPrompt(provider))];
+            await Console.Error.WriteLineAsync($"{provider} · {Configuration.GetModel()} · ctx={contextWindowSize} · max_iter={maxIterations}");
+            _sessionStarted = true;
+        }
+
+        _messages!.Add(new UserChatMessage(prompt));
 
         for (int iteration = 0; iteration < maxIterations; iteration++)
         {
             await Console.Error.WriteLineAsync($"[{iteration + 1}/{maxIterations}] Thinking...");
 
-            var (accumulatedToolCalls, responseContent) = await ProcessStreamingUpdates(client, messages, options);
+            var (accumulatedToolCalls, responseContent) = await ProcessStreamingUpdates(client, _messages, options);
 
             if (accumulatedToolCalls.Count == 0)
             {
@@ -30,17 +38,21 @@ public static class ChatOrchestrator
 
                     if (LooksLikeSkippedEdit(responseContent) && iteration < maxIterations - 1)
                     {
-                        messages.Add(new AssistantChatMessage(responseContent));
-                        messages.Add(new UserChatMessage("You described the code changes above but did not apply them. Execute the necessary Edit or EditLine tool calls now to actually make these changes to the files. Do not repeat the descriptions — just apply them."));
+                        _messages.Add(new AssistantChatMessage(responseContent));
+                        _messages.Add(new UserChatMessage("You described the code changes above but did not apply them. Execute the necessary Edit or EditLine tool calls now to actually make these changes to the files. Do not repeat the descriptions — just apply them."));
                         continue;
                     }
+
+                    _messages.Add(new AssistantChatMessage(responseContent));
                 }
                 break;
             }
 
             await Console.Error.WriteLineAsync();  // newline after streaming
-            messages = FinalizeToolCalls(accumulatedToolCalls, messages, contextWindowSize);
+            _messages = FinalizeToolCalls(accumulatedToolCalls, _messages, contextWindowSize);
         }
+
+        _messages = ContextManager.TruncateMessages(_messages, contextWindowSize);
     }
 
     private static async Task<(Dictionary<int, ToolCallAccumulator> ToolCalls, string? Content)> ProcessStreamingUpdates(
