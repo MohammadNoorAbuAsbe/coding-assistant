@@ -55,7 +55,8 @@ public static class ResponseHandler
             ToolHandler.GrepFunctionName => ProcessGrepCall(toolCall),
             ToolHandler.WebFetchFunctionName => WebToolHandlers.ProcessWebFetchCall(toolCall),
             ToolHandler.WebSearchFunctionName => WebToolHandlers.ProcessWebSearchCall(toolCall),
-            _ => CreateErrorResult(toolCall, $"Error: unknown function '{toolCall.FunctionName}'. Available functions: {ToolHandler.ReadFunctionName}, {ToolHandler.WriteFunctionName}, {ToolHandler.EditFunctionName}, {ToolHandler.EditLineFunctionName}, {ToolHandler.BashFunctionName}, {ToolHandler.GlobFunctionName}, {ToolHandler.GrepFunctionName}, {ToolHandler.WebFetchFunctionName}, {ToolHandler.WebSearchFunctionName}.")
+            ToolHandler.QuestionFunctionName => QuestionHandler.ProcessQuestionCall(toolCall),
+            _ => CreateErrorResult(toolCall, $"Error: unknown function '{toolCall.FunctionName}'. Available functions: {ToolHandler.ReadFunctionName}, {ToolHandler.WriteFunctionName}, {ToolHandler.EditFunctionName}, {ToolHandler.EditLineFunctionName}, {ToolHandler.BashFunctionName}, {ToolHandler.GlobFunctionName}, {ToolHandler.GrepFunctionName}, {ToolHandler.WebFetchFunctionName}, {ToolHandler.WebSearchFunctionName}, {ToolHandler.QuestionFunctionName}.")
         };
     }
 

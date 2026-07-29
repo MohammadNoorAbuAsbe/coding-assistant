@@ -14,6 +14,7 @@ public static class ToolHandler
     public const string GrepFunctionName = "Grep";
     public const string WebFetchFunctionName = "WebFetch";
     public const string WebSearchFunctionName = "WebSearch";
+    public const string QuestionFunctionName = "Question";
 
     private const string ReadFunctionDescription = "Read and return the contents of a file";
     private const string WriteFunctionDescription = "Write content to a file";
@@ -24,10 +25,11 @@ public static class ToolHandler
     private const string GrepFunctionDescription = "Search for patterns in files using ripgrep. Supports regex patterns. Returns matching lines with file paths and line numbers. Respects .gitignore by default, skips binary files.";
     private const string WebFetchFunctionDescription = "Fetch and return the contents of a URL. Converts HTML pages to markdown for readability. Use this to read documentation, check API responses, or fetch web content.";
     private const string WebSearchFunctionDescription = "Search the web for current information using Tavily search. Returns a list of results with titles, URLs, and content snippets. Use this when you need up-to-date information, documentation, or answers not available in the local codebase.";
+    private const string QuestionFunctionDescription = "Ask the user a question with multiple-choice options. Use this when you are uncertain about an approach, need a decision, or the task is ambiguous. Present 2-6 clear options with short labels and descriptions. Do not guess when you can ask.";
     private const string FilePathPropertyName = "file_path";
 
     private const string PatternParameter = "pattern";
-    
+
     public static ChatTool CreateReadTool() =>
         CreateTool(ReadFunctionName, ReadFunctionDescription, [FilePathPropertyName],
             StringProperties((FilePathPropertyName, "The path to the file to read")));
@@ -86,6 +88,31 @@ public static class ToolHandler
                 ("max_results", "Maximum number of results to return (1-10, default: 5)"),
                 ("search_depth", "Search depth: 'basic' (faster, cheaper) or 'advanced' (more thorough). Default: basic")));
 
+    public static ChatTool CreateQuestionTool() =>
+        CreateTool(QuestionFunctionName, QuestionFunctionDescription,
+            ["question", "options"],
+            new Dictionary<string, object>
+            {
+                ["question"] = StringProp("The question to ask the user"),
+                ["header"] = StringProp("Very short label (max 30 chars)"),
+                ["options"] = new Dictionary<string, object>
+                {
+                    ["type"] = "array",
+                    ["description"] = "Available choices for the user (2-6 recommended)",
+                    ["items"] = new Dictionary<string, object>
+                    {
+                        ["type"] = "object",
+                        ["required"] = new[] { "label" },
+                        ["properties"] = new Dictionary<string, object>
+                        {
+                            ["label"] = StringProp("Display text for the choice (1-5 words, concise)"),
+                            ["description"] = StringProp("Explanation of what this choice means")
+                        }
+                    }
+                },
+                ["allow_custom"] = StringProp("Set to 'true' to let the user type a custom answer (default: 'false')")
+            });
+
     public static ChatCompletionOptions CreateCompletionOptions()
     {
         return new ChatCompletionOptions
@@ -100,7 +127,8 @@ public static class ToolHandler
                 CreateGlobTool(),
                 CreateGrepTool(),
                 CreateWebFetchTool(),
-                CreateWebSearchTool()
+                CreateWebSearchTool(),
+                CreateQuestionTool()
             }
         };
     }
@@ -124,6 +152,13 @@ public static class ToolHandler
             ["type"] = "string",
             ["description"] = p.description
         });
+
+    private static Dictionary<string, object> StringProp(string description) =>
+        new()
+        {
+            ["type"] = "string",
+            ["description"] = description
+        };
 
     public class ReadFileCall
     {
@@ -183,5 +218,19 @@ public static class ToolHandler
         public required string query { get; set; }
         public string? max_results { get; set; }
         public string? search_depth { get; set; }
+    }
+
+    public class QuestionCall
+    {
+        public required string question { get; set; }
+        public string? header { get; set; }
+        public required List<QuestionOption> options { get; set; }
+        public string? allow_custom { get; set; }
+    }
+
+    public class QuestionOption
+    {
+        public required string label { get; set; }
+        public string? description { get; set; }
     }
 }
