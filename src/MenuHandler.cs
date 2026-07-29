@@ -9,7 +9,7 @@ public static class MenuHandler
         var list = providers.Values.ToList();
         var keys = providers.Keys.ToList();
 
-        Console.WriteLine("\n=== Select AI Provider ===");
+        Console.WriteLine("\nSelect provider:");
         for (int i = 0; i < list.Count; i++)
         {
             Console.WriteLine($"  {i + 1}. {list[i].DisplayName}");
@@ -44,7 +44,7 @@ public static class MenuHandler
             return models[0];
         }
 
-        Console.WriteLine("\n=== Select Model ===");
+        Console.WriteLine("\nSelect model:");
         for (int i = 0; i < models.Count; i++)
         {
             var note = models[i] == config.DefaultModel ? " (default)" : "";
@@ -57,18 +57,9 @@ public static class MenuHandler
 
     public static string GetPrompt()
     {
-        Console.WriteLine("\n=== Enter your prompt ===");
         Console.Write("> ");
         var prompt = Console.ReadLine();
         return prompt?.Trim() ?? "";
-    }
-
-    public static bool AskRunAgain()
-    {
-        Console.Write("\nRun another prompt? (y/n): ");
-        var key = Console.ReadKey();
-        Console.WriteLine();
-        return key.KeyChar is 'y' or 'Y';
     }
 
     private static List<string> DiscoverOllamaModels()

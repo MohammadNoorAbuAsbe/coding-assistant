@@ -5,7 +5,7 @@ Configuration.LoadProviderConfigs();
 
 var providers = Configuration.Providers;
 
-do
+while (true)
 {
     string providerId;
     var envProvider = Environment.GetEnvironmentVariable("AI_PROVIDER");
@@ -13,7 +13,6 @@ do
     if (envProvider != null && providers.ContainsKey(envProvider))
     {
         providerId = envProvider;
-        Console.WriteLine($"\nProvider: {providers[providerId].DisplayName} (from AI_PROVIDER)");
     }
     else
     {
@@ -28,7 +27,6 @@ do
     if (envProvider != null && envModel != null)
     {
         model = envModel;
-        Console.WriteLine($"Model: {model} (from AI_MODEL)");
     }
     else
     {
@@ -39,11 +37,7 @@ do
 
     var prompt = MenuHandler.GetPrompt();
     if (string.IsNullOrWhiteSpace(prompt))
-    {
-        Console.WriteLine("Prompt must not be empty.");
         continue;
-    }
 
     await ChatOrchestrator.Run(prompt);
-
-} while (MenuHandler.AskRunAgain());
+}

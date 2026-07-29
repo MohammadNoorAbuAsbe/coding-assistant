@@ -14,20 +14,11 @@ public static class ChatOrchestrator
         var systemMessage = new SystemChatMessage(SystemPrompt.GetPrompt(provider));
         List<ChatMessage> messages = [systemMessage, new UserChatMessage(prompt)];
 
-        await Console.Error.WriteLineAsync("====================");
-        await Console.Error.WriteLineAsync($"Provider: {provider}");
-        await Console.Error.WriteLineAsync($"Model: {Configuration.GetModel()}");
-        await Console.Error.WriteLineAsync($"Context window: {contextWindowSize} tokens");
-        await Console.Error.WriteLineAsync($"Max tool result tokens: {Configuration.GetMaxToolResultTokens()}");
-        await Console.Error.WriteLineAsync($"Max iterations: {maxIterations}");
-        await Console.Error.WriteLineAsync($"System prompt length: {ContextManager.EstimateTokens(SystemPrompt.GetPrompt(provider))} tokens");
-        await Console.Error.WriteLineAsync($"User prompt: {prompt}");
-        await Console.Error.WriteLineAsync($"User prompt tokens: {ContextManager.EstimateTokens(prompt)}");
-        await Console.Error.WriteLineAsync("===================");
+        await Console.Error.WriteLineAsync($"{provider} · {Configuration.GetModel()} · ctx={contextWindowSize} · max_iter={maxIterations}");
 
         for (int iteration = 0; iteration < maxIterations; iteration++)
         {
-            await Console.Error.WriteLineAsync($"[iteration {iteration + 1}/{maxIterations}]");
+            await Console.Error.WriteLineAsync($"[{iteration + 1}/{maxIterations}] Thinking...");
 
             var (accumulatedToolCalls, responseContent) = await ProcessStreamingUpdates(client, messages, options);
 
@@ -98,18 +89,42 @@ public static class ChatOrchestrator
                 };
                 if (!string.IsNullOrEmpty(toolUpdate.FunctionName))
                 {
-                    Console.Error.Write($"\n[Tool Call: {toolUpdate.FunctionName}] ");
+                    Console.Error.Write($"\n[Tool: {toolUpdate.FunctionName}] ");
                 }
             }
 
             var acc = accumulatedToolCalls[index];
             if (!string.IsNullOrEmpty(toolUpdate.ToolCallId)) acc.Id = toolUpdate.ToolCallId;
-            if (!string.IsNullOrEmpty(toolUpdate.FunctionName)) acc.FunctionName = toolUpdate.FunctionName;
+            if (!string.IsNullOrEmpty(toolUpdate.FunctionName))
+            {
+                bool wasEmpty = string.IsNullOrEmpty(acc.FunctionName);
+                acc.FunctionName = toolUpdate.FunctionName;
+                if (wasEmpty)
+                {
+                    Console.Error.Write($"\n[Tool: {toolUpdate.FunctionName}] ");
+                }
+            }
             if (toolUpdate.FunctionArgumentsUpdate != null && toolUpdate.FunctionArgumentsUpdate.ToMemory().Length > 0)
             {
                 acc.Arguments += toolUpdate.FunctionArgumentsUpdate.ToString();
+                if (!acc.ArgDisplayed)
+                {
+                    string? primaryArg = ExtractFirstStringValue(acc.Arguments);
+                    if (primaryArg != null)
+                    {
+                        acc.ArgDisplayed = true;
+                        Console.Error.Write(primaryArg);
+                        Console.Error.Flush();
+                    }
+                }
             }
         }
+    }
+
+    private static string? ExtractFirstStringValue(string json)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(json, @"""[^""]+"":\s*""([^""]+)""");
+        return match.Success ? match.Groups[1].Value : null;
     }
 
     private static List<ChatMessage> FinalizeToolCalls(
@@ -123,7 +138,7 @@ public static class ChatOrchestrator
 
         messages.Add(new AssistantChatMessage(assistantToolCalls));
 
-        Console.Error.WriteLine("\n--- Tool Results ---");
+        Console.Error.WriteLine("\n— Results —");
         var toolResultMessages = new List<ChatMessage>();
         foreach (var toolCall in assistantToolCalls)
         {
@@ -134,36 +149,33 @@ public static class ChatOrchestrator
                 if (result is ToolChatMessage toolMsg)
                 {
                     string content = ContextManager.ExtractText(toolMsg.Content);
-                    int tokens = ContextManager.EstimateTokens(content);
-                    string preview = content.Length <= 200 ? content : content[..200] + "...";
-                    Console.Error.WriteLine($"  [{toolCall.FunctionName}] ({tokens} tok): {preview}");
+                    bool isError = content.StartsWith("Error:");
+                    string symbol = isError ? "✗" : "✓";
+                    string? primaryArg = ExtractFirstStringValue(toolCall.FunctionArguments?.ToString() ?? "");
+                    if (!isError)
+                    {
+                        string tokensStr = $"{ContextManager.EstimateTokens(content):N0}";
+                        string argPart = !string.IsNullOrEmpty(primaryArg) ? $" — {TruncateForDisplay(primaryArg, 80)}" : "";
+                        Console.Error.WriteLine($"  {symbol} {toolCall.FunctionName} ({tokensStr} tok){argPart}");
+                    }
+                    else
+                    {
+                        Console.Error.WriteLine($"  {symbol} {toolCall.FunctionName} → {TruncateForDisplay(content, 80)}");
+                    }
                 }
             }
         }
 
         messages.AddRange(toolResultMessages);
 
-        int totalTokens = 0;
-        var truncated = ContextManager.TruncateMessages(messages, contextWindowSize);
+        return ContextManager.TruncateMessages(messages, contextWindowSize);
+    }
 
-        Console.Error.WriteLine($"\n--- Message Summary ({truncated.Count} messages) ---");
-        for (int i = 0; i < truncated.Count; i++)
-        {
-            var msg = truncated[i];
-            int tokens = ContextManager.EstimateMessageTokens(msg);
-            totalTokens += tokens;
-            string typeName = msg.GetType().Name;
-            string preview = "";
-            if (msg is UserChatMessage u) preview = ContextManager.ExtractText(u.Content)[..Math.Min(50, ContextManager.ExtractText(u.Content).Length)];
-            else if (msg is AssistantChatMessage a && a.Content != null) preview = ContextManager.ExtractText(a.Content)[..Math.Min(50, ContextManager.ExtractText(a.Content).Length)];
-            else if (msg is ToolChatMessage t) preview = $"[tool result: {ContextManager.ExtractText(t.Content)[..Math.Min(50, ContextManager.ExtractText(t.Content).Length)]}]";
-
-            Console.Error.WriteLine($"  [{i}] {typeName} ({tokens} tok): {preview}...");
-        }
-        Console.Error.WriteLine($"  Total estimated tokens: {totalTokens} / {contextWindowSize}");
-        Console.Error.WriteLine("====================\n");
-
-        return truncated;
+    private static string TruncateForDisplay(string text, int maxLen)
+    {
+        if (string.IsNullOrEmpty(text)) return text;
+        if (text.Length <= maxLen) return text;
+        return text[..maxLen] + "…";
     }
 
     private static bool LooksLikeSkippedEdit(string response)
@@ -186,4 +198,5 @@ public class ToolCallAccumulator
     public string Id { get; set; } = "";
     public string FunctionName { get; set; } = "";
     public string Arguments { get; set; } = "";
+    public bool ArgDisplayed { get; set; }
 }

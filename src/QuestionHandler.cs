@@ -32,13 +32,12 @@ internal static class QuestionHandler
     private static string AskUser(string question, string? header, List<ToolHandler.QuestionOption> options, bool allowCustom)
     {
         Console.Error.WriteLine();
-        Console.Error.WriteLine("--- Question ---");
-
+        Console.Error.Write("[Question]");
         if (!string.IsNullOrEmpty(header))
         {
-            Console.Error.WriteLine($"[{header}]");
+            Console.Error.Write($" {header}");
         }
-
+        Console.Error.WriteLine();
         Console.Error.WriteLine(question);
         Console.Error.WriteLine();
 
@@ -57,15 +56,7 @@ internal static class QuestionHandler
             Console.Error.WriteLine($"  {options.Count + 1}. [Type your own answer]");
         }
 
-        Console.Error.WriteLine();
-        Console.Error.Write("Your choice (enter number");
-
-        if (allowCustom)
-        {
-            Console.Error.Write(" or type your answer");
-        }
-
-        Console.Error.Write("): ");
+        Console.Error.Write("Choice (1-{0}{1}): ", options.Count, allowCustom ? $"/{options.Count + 1}" : "");
 
         string? input = Console.ReadLine();
         Console.Error.WriteLine();
@@ -83,7 +74,7 @@ internal static class QuestionHandler
 
         if (allowCustom && int.TryParse(input.Trim(), out int customChoice) && customChoice == options.Count + 1)
         {
-            Console.Error.Write("Enter your answer: ");
+            Console.Error.Write("Custom answer: ");
             string? customAnswer = Console.ReadLine();
             Console.Error.WriteLine();
             return $"User provided custom answer: {customAnswer ?? "(empty)"}";
