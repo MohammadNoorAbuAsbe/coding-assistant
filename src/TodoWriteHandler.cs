@@ -22,7 +22,9 @@ internal static class TodoWriteHandler
                 }
 
                 _todos = args.todos;
-                return new ToolChatMessage(toolCall.Id, FormatTodoList(_todos));
+                string formatted = FormatTodoList(_todos);
+                PrintTodoList(formatted);
+                return new ToolChatMessage(toolCall.Id, formatted);
             });
     }
 
@@ -56,6 +58,35 @@ internal static class TodoWriteHandler
         int total = todos.Count;
         sb.AppendLine($"\nProgress: {completed}/{total} tasks completed");
         return sb.ToString();
+    }
+
+    private static void PrintTodoList(string formatted)
+    {
+        using (ConsoleStyler.WithColor(ConsoleColor.Magenta))
+            Console.Error.WriteLine("\n[Task List]");
+        foreach (var line in formatted.Split('\n'))
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            if (line.StartsWith("## "))
+            {
+                using (ConsoleStyler.WithColor(ConsoleColor.Yellow))
+                    Console.Error.WriteLine(line[3..]);
+            }
+            else if (line.StartsWith("**") && line.EndsWith("**"))
+            {
+                using (ConsoleStyler.WithColor(ConsoleColor.Cyan))
+                    Console.Error.WriteLine($"  {line.Trim('*')}");
+            }
+            else if (line.StartsWith("Progress:"))
+            {
+                using (ConsoleStyler.WithColor(ConsoleColor.Green))
+                    Console.Error.WriteLine($"  {line}");
+            }
+            else
+            {
+                Console.Error.WriteLine($"  {line}");
+            }
+        }
     }
 }
 
