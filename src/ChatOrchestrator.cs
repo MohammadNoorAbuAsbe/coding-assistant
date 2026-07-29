@@ -47,15 +47,7 @@ public static class ChatOrchestrator
                 break;
             }
 
-            await Console.Error.WriteLineAsync($"\n--- Tool Calls ({accumulatedToolCalls.Count}) ---");
-            foreach (var acc in accumulatedToolCalls.Values)
-            {
-                await Console.Error.WriteLineAsync($"  Tool: {acc.FunctionName}");
-                await Console.Error.WriteLineAsync($"  ID: {acc.Id}");
-                await Console.Error.WriteLineAsync($"  Args: {acc.Arguments}");
-                await Console.Error.WriteLineAsync("  ---");
-            }
-
+            await Console.Error.WriteLineAsync();  // newline after streaming
             messages = FinalizeToolCalls(accumulatedToolCalls, messages, contextWindowSize);
         }
     }
@@ -83,6 +75,7 @@ public static class ChatOrchestrator
         foreach (var text in contentUpdate.Where(p => !string.IsNullOrEmpty(p.Text)).Select(p => p.Text))
         {
             Console.Write(text);
+            Console.Out.Flush();
             responseContent = (responseContent ?? "") + text;
         }
     }
@@ -103,6 +96,10 @@ public static class ChatOrchestrator
                     Id = toolUpdate.ToolCallId ?? "",
                     FunctionName = toolUpdate.FunctionName ?? ""
                 };
+                if (!string.IsNullOrEmpty(toolUpdate.FunctionName))
+                {
+                    Console.Error.Write($"\n[Tool Call: {toolUpdate.FunctionName}] ");
+                }
             }
 
             var acc = accumulatedToolCalls[index];
@@ -126,18 +123,21 @@ public static class ChatOrchestrator
 
         messages.Add(new AssistantChatMessage(assistantToolCalls));
 
-        var toolResultMessages = ResponseHandler.ProcessToolCalls(assistantToolCalls);
-
-        Console.Error.WriteLine($"\n--- Tool Results ({toolResultMessages.Count}) ---");
-        foreach (var msg in toolResultMessages)
+        Console.Error.WriteLine("\n--- Tool Results ---");
+        var toolResultMessages = new List<ChatMessage>();
+        foreach (var toolCall in assistantToolCalls)
         {
-            if (msg is ToolChatMessage toolMsg)
+            var result = ResponseHandler.ProcessSingleToolCall(toolCall);
+            if (result != null)
             {
-                string content = ContextManager.ExtractText(toolMsg.Content);
-                int tokens = ContextManager.EstimateTokens(content);
-                Console.Error.WriteLine($"  Tool Call ID: {toolMsg.ToolCallId}");
-                Console.Error.WriteLine($"  Result ({tokens} tokens): {content[..Math.Min(200, content.Length)]}{(content.Length > 200 ? "..." : "")}");
-                Console.Error.WriteLine("  ---");
+                toolResultMessages.Add(result);
+                if (result is ToolChatMessage toolMsg)
+                {
+                    string content = ContextManager.ExtractText(toolMsg.Content);
+                    int tokens = ContextManager.EstimateTokens(content);
+                    string preview = content.Length <= 200 ? content : content[..200] + "...";
+                    Console.Error.WriteLine($"  [{toolCall.FunctionName}] ({tokens} tok): {preview}");
+                }
             }
         }
 

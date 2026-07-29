@@ -60,6 +60,11 @@ public static class ResponseHandler
         };
     }
 
+    internal static ToolChatMessage? ProcessSingleToolCall(ChatToolCall toolCall)
+    {
+        return ProcessToolCall(toolCall);
+    }
+
     internal static ToolChatMessage CreateErrorResult(ChatToolCall toolCall, string errorMessage)
     {
         Console.Error.WriteLine($"[tool error] {errorMessage}");
