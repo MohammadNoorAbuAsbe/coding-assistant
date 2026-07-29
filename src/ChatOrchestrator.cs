@@ -44,12 +44,14 @@ public static class ChatOrchestrator
             {
                 if (!string.IsNullOrEmpty(responseContent))
                 {
+                    Console.WriteLine();
                     messages.Add(new AssistantChatMessage(responseContent));
                     finalResponse = responseContent;
                 }
                 break;
             }
 
+            await Console.Error.WriteLineAsync();
             messages = FinalizeToolCalls(accumulatedToolCalls, messages, contextWindowSize);
         }
 
