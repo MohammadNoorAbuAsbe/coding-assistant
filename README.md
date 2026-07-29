@@ -6,7 +6,7 @@ A terminal-based AI coding assistant that uses LLMs to read, write, edit, search
 
 - **Multi-provider** — Ollama (local), OpenRouter, and OpenAI (cloud)
 - **Interactive menu** — select provider, model, and enter prompts in a loop
-- **7 tools**: Read, Write, Edit (fuzzy match), EditLine (by line number), Bash, Glob, Grep (ripgrep)
+- **10 tools**: Read, Write, Edit (fuzzy match), EditLine (by line number), Bash, Glob, Grep (ripgrep), WebFetch (URLs), WebSearch (Tavily), Question (interactive)
 - **Streaming** — responses appear in real-time as the model generates them
 - **Context window management** — automatic truncation to prevent token overflow
 - **Iteration limits** — prevents infinite loops (configurable, default 20)
@@ -14,19 +14,25 @@ A terminal-based AI coding assistant that uses LLMs to read, write, edit, search
 - **`config.json`** — customize providers, models, and endpoints
 - **Agent loop** — continues working until the task is done
 - **Fuzzy matching** — Edit tool matches even with whitespace/case differences
+- **Web search** — Tavily integration for fetching up-to-date web content
+- **Question tool** — asks the user for decisions with multiple-choice options
+- **OpenRouter headers** — sends `HTTP-Referer` and `X-Title` for OpenRouter rankings
 
 ## Prerequisites
 
 - [.NET 10.0](https://dotnet.microsoft.com/download/dotnet/10.0)
 - One of: **Ollama** running locally, **OpenRouter** API key, or **OpenAI** API key
+- **ripgrep** (`rg`) for the Grep tool — install via `winget install BurntSushi.ripgrep.MSVC`
+- **Tavily API key** (optional) for the WebSearch tool — get one at [tavily.com](https://tavily.com)
 
 ## Setup
 
 1. Clone the repo and navigate to the project directory.
-2. (Optional) Create a `.env` file in the project root to store API keys:
+2. Create a `.env` file in the project root to store API keys:
    ```sh
    OPENROUTER_API_KEY=sk-or-v1-...
    OPENAI_API_KEY=sk-...
+   TAVILY_API_KEY=tvly-...
    ```
 3. Run the assistant:
    ```sh
@@ -36,7 +42,7 @@ A terminal-based AI coding assistant that uses LLMs to read, write, edit, search
 
 ### Provider-specific notes
 
-- **Ollama**: Install [Ollama](https://ollama.com) and pull a model (`ollama pull qwen3:8b`). No API key needed.
+- **Ollama**: Install [Ollama](https://ollama.com) and pull a model (`ollama pull qwen3:8b`). No API key needed. Models are auto-discovered via `ollama list`.
 - **OpenRouter**: Get an API key from [OpenRouter](https://openrouter.ai) and set `OPENROUTER_API_KEY`.
 - **OpenAI**: Get an API key from the [Azure Portal](https://portal.azure.com) or [OpenAI](https://platform.openai.com) and set `OPENAI_API_KEY`.
 
@@ -58,11 +64,12 @@ dotnet run
 | `AI_MODEL` | No | provider default | Model to use (skips model selection menu) |
 | `OPENROUTER_API_KEY` | For OpenRouter | — | API key for OpenRouter |
 | `OPENROUTER_BASE_URL` | No | `https://openrouter.ai/api/v1` | OpenRouter endpoint |
-| `OPENROUTER_SITE_URL` | No | — | Sent as `HTTP-Referer` header |
-| `OPENROUTER_SITE_NAME` | No | — | Sent as `X-Title` header |
+| `OPENROUTER_SITE_URL` | No | — | Sent as `HTTP-Referer` header (for OpenRouter rankings) |
+| `OPENROUTER_SITE_NAME` | No | — | Sent as `X-Title` header (for OpenRouter rankings) |
 | `OPENAI_API_KEY` | For OpenAI | — | API key for OpenAI |
 | `OPENAI_BASE_URL` | No | `https://api.openai.com/v1` | OpenAI endpoint |
 | `OLLAMA_BASE_URL` | No | `http://localhost:11434/v1` | Ollama endpoint |
+| `TAVILY_API_KEY` | For WebSearch | — | API key for Tavily web search (get at https://tavily.com) |
 | `SYSTEM_PROMPT` | No | (built-in) | Override the system prompt |
 | `MAX_ITERATIONS` | No | `20` | Max tool-call iterations before stopping |
 | `CONTEXT_WINDOW_SIZE` | No | `32768` (local) / `128000` (cloud) | Max tokens for context window |
@@ -84,16 +91,26 @@ You can customize providers in `config.json` (in the project root or any parent 
       "needsApiKey": true,
       "apiKeyEnvVar": "OPENAI_API_KEY",
       "models": ["gpt-4o", "gpt-4o-mini", "o3-mini", "o4-mini"]
+    },
+    "openrouter": {
+      "displayName": "OpenRouter (Cloud)",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "defaultModel": "openrouter/free",
+      "needsApiKey": true,
+      "apiKeyEnvVar": "OPENROUTER_API_KEY",
+      "siteUrlEnvVar": "OPENROUTER_SITE_URL",
+      "siteNameEnvVar": "OPENROUTER_SITE_NAME",
+      "models": ["openrouter/free"]
     }
   }
 }
 ```
 
-Available built-in providers: `ollama`, `openrouter`, `openai`. Entries in `config.json` override the built-in defaults.
+Available built-in providers: `ollama`, `openrouter`, `openai`. Entries in `config.json` override the built-in defaults. Each provider supports `baseUrl`, `defaultModel`, `needsApiKey`, `apiKeyEnvVar`, and `models`.
 
 ## Available Tools
 
-The assistant has 7 tools that it can call autonomously:
+The assistant has 10 tools that it can call autonomously:
 
 | Tool | Description |
 |------|-------------|
@@ -102,8 +119,33 @@ The assistant has 7 tools that it can call autonomously:
 | **Edit** | Edit a file by exact string replacement (with fuzzy fallback) |
 | **EditLine** | Edit by replacing lines by number (requires re-reading between edits) |
 | **Bash** | Execute a shell command |
-| **Glob** | Find files by glob pattern |
-| **Grep** | Search file contents with ripgrep (regex) |
+| **Glob** | Find files by glob pattern (`**`, `*`, `?`, `{a,b}`) |
+| **Grep** | Search file contents with ripgrep (regex, supports include/exclude/case-insensitive) |
+| **WebFetch** | Fetch and return the contents of a URL (converts HTML to markdown) |
+| **WebSearch** | Search the web for current information using Tavily |
+| **Question** | Ask the user a question with multiple-choice options for decisions |
+
+## Project Structure
+
+```
+src/
+├── Program.cs            # Entry point with interactive loop
+├── ChatOrchestrator.cs   # Agent loop — streaming, tool dispatch, iteration
+├── ChatService.cs        # OpenAI SDK client creation (with OpenRouter headers)
+├── Configuration.cs      # .env / config.json loading, provider resolution
+├── ContextManager.cs     # Token estimation and message truncation
+├── GlobHelper.cs         # File globbing via Microsoft.Extensions.FileSystemGlobbing
+├── MatchFinder.cs        # Fuzzy text matching for the Edit tool
+├── MenuHandler.cs        # Interactive provider/model selection, Ollama discovery
+├── ProviderConfig.cs     # Provider configuration model
+├── QuestionHandler.cs    # Interactive Question tool implementation
+├── ResponseHandler.cs    # Tool call execution (Read, Write, Edit, EditLine, Bash, Glob, Grep)
+├── RipgrepHelper.cs      # ripgrep argument builder and path finder
+├── SystemPrompt.cs       # System prompts (local vs cloud variants)
+├── TavilyModels.cs       # Tavily search response models
+├── ToolHandler.cs        # Tool definitions and OpenAI function schemas
+└── WebToolHandlers.cs    # WebFetch and WebSearch tool implementations
+```
 
 ## Building
 
