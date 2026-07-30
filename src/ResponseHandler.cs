@@ -359,18 +359,21 @@ public static class ResponseHandler
                     return CreateErrorResult(toolCall, "Error: ripgrep (rg) not found. Install it with: winget install BurntSushi.ripgrep.MSVC");
                 }
 
-                string arguments = RipgrepHelper.BuildRipgrepArguments(args);
+                List<string> arguments = RipgrepHelper.BuildRipgrepArguments(args);
 
                 var processStartInfo = new ProcessStartInfo
                 {
                     FileName = rgPath,
-                    Arguments = arguments,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
                     CreateNoWindow = true,
                     WorkingDirectory = Environment.CurrentDirectory
                 };
+                foreach (var arg in arguments)
+                {
+                    processStartInfo.ArgumentList.Add(arg);
+                }
 
                 using var process = new Process { StartInfo = processStartInfo };
                 process.Start();
