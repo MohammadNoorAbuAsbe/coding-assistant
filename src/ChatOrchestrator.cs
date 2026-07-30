@@ -137,7 +137,7 @@ public static class ChatOrchestrator
             string remaining = lineBuffer.ToString();
             string rendered = AnsiRenderer.Render(remaining, ref inCodeBlock);
             Console.Write(rendered);
-            Console.Out.Flush();
+            await Console.Out.FlushAsync();
             lineBuffer.Clear();
         }
 

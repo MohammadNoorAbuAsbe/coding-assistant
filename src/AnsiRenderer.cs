@@ -23,9 +23,6 @@ public static class AnsiRenderer
         if (string.IsNullOrEmpty(text)) return text;
 
         string trimmed = text.TrimStart();
-        int indent = text.Length - trimmed.Length;
-        string indentStr = text[..indent];
-
         if (trimmed.StartsWith("```"))
         {
             inCodeBlock = !inCodeBlock;
