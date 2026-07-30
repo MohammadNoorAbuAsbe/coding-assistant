@@ -5,48 +5,16 @@ Configuration.LoadProviderConfigs();
 
 var providers = Configuration.Providers;
 
-string providerId;
-var envProvider = Environment.GetEnvironmentVariable("AI_PROVIDER");
-if (envProvider != null && providers.ContainsKey(envProvider))
-{
-    providerId = envProvider;
-}
-else
-{
-    providerId = MenuHandler.SelectProvider(providers);
-}
-
+var providerId = AppBootstrapper.ResolveProviderId(providers);
 Configuration.SetProvider(providerId);
-var providerConfig = providers[providerId];
 
-string model;
-var envModel = Environment.GetEnvironmentVariable("AI_MODEL");
-if (envProvider != null && envModel != null)
-{
-    model = envModel;
-}
-else
-{
-    model = MenuHandler.SelectModel(providerId, providerConfig);
-}
-
+var model = AppBootstrapper.ResolveModel(providerId, providers[providerId]);
 Configuration.SetModel(model);
 
 var session = new ChatSession();
 
 using var cts = new CancellationTokenSource();
-var cancelPressed = false;
-
-Console.CancelKeyPress += (sender, e) =>
-{
-    if (cancelPressed)
-        return;
-
-    e.Cancel = true;
-    cancelPressed = true;
-    Console.Error.WriteLine("\n[Interrupted] Cancelling...");
-    cts.Cancel();
-};
+AppBootstrapper.SetupCancelHandler(cts);
 
 while (true)
 {
