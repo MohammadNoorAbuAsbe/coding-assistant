@@ -1,3 +1,4 @@
+using System.Text;
 using OpenAI.Chat;
 
 namespace TerminalAiAssistant;
@@ -110,12 +111,14 @@ public static class ChatOrchestrator
     {
         var accumulatedToolCalls = new Dictionary<int, ToolCallAccumulator>();
         string? responseContent = null;
+        var lineBuffer = new StringBuilder();
+        bool inCodeBlock = false;
 
         try
         {
             await foreach (var update in ChatService.GetCompletionStreaming(client, messages, options).WithCancellation(cancellationToken))
             {
-                ProcessContentUpdate(update.ContentUpdate, ref responseContent);
+                ProcessContentUpdate(update.ContentUpdate, ref responseContent, lineBuffer, ref inCodeBlock);
                 ProcessToolCallUpdates(update.ToolCallUpdates, accumulatedToolCalls);
             }
         }
@@ -129,19 +132,43 @@ public static class ChatOrchestrator
                 responseContent = "The operation was cancelled by the user.";
         }
 
+        if (lineBuffer.Length > 0)
+        {
+            string remaining = lineBuffer.ToString();
+            string rendered = AnsiRenderer.Render(remaining, ref inCodeBlock);
+            Console.Write(rendered);
+            Console.Out.Flush();
+            lineBuffer.Clear();
+        }
+
         return (accumulatedToolCalls, responseContent);
     }
 
-    private static void ProcessContentUpdate(IList<ChatMessageContentPart>? contentUpdate, ref string? responseContent)
+    private static void ProcessContentUpdate(IList<ChatMessageContentPart>? contentUpdate, ref string? responseContent, StringBuilder lineBuffer, ref bool inCodeBlock)
     {
         if (contentUpdate == null)
             return;
 
         foreach (var text in contentUpdate.Where(p => !string.IsNullOrEmpty(p.Text)).Select(p => p.Text))
         {
-            Console.Write(text);
-            Console.Out.Flush();
             responseContent = (responseContent ?? "") + text;
+            lineBuffer.Append(text);
+
+            string buf = lineBuffer.ToString();
+            int lastNewline = buf.LastIndexOf('\n');
+            if (lastNewline >= 0)
+            {
+                string completeLines = buf[..lastNewline];
+                lineBuffer.Clear();
+                lineBuffer.Append(buf[(lastNewline + 1)..]);
+
+                foreach (var line in completeLines.Split('\n'))
+                {
+                    string rendered = AnsiRenderer.Render(line, ref inCodeBlock);
+                    Console.WriteLine(rendered);
+                }
+                Console.Out.Flush();
+            }
         }
     }
 
