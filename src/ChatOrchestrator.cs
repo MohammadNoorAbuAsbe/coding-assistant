@@ -4,10 +4,7 @@ namespace TerminalAiAssistant;
 
 public static class ChatOrchestrator
 {
-    private static List<ChatMessage>? _messages;
-    private static bool _sessionStarted;
-
-    public static async Task Run(string prompt)
+    public static async Task Run(ChatSession session, string prompt)
     {
         var client = ChatService.CreateClient();
         var options = ToolHandler.CreateCompletionOptions();
@@ -15,17 +12,17 @@ public static class ChatOrchestrator
         var maxIterations = Configuration.GetMaxIterations();
         var contextWindowSize = Configuration.GetContextWindowSize();
 
-        if (!_sessionStarted)
+        if (!session.SessionStarted)
         {
-            _messages = [new SystemChatMessage(SystemPrompt.GetPrompt(provider))];
+            session.Messages = [new SystemChatMessage(SystemPrompt.GetPrompt(provider))];
             using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
                 await Console.Error.WriteLineAsync($"{provider} · {Configuration.GetModel()} · ctx={contextWindowSize} · max_iter={maxIterations}");
-            _sessionStarted = true;
+            session.SessionStarted = true;
         }
 
-        _messages!.Add(new UserChatMessage(prompt));
-        await RunAgentLoop(client, _messages, options, maxIterations, contextWindowSize);
-        _messages = ContextManager.TruncateMessages(_messages, contextWindowSize);
+        session.Messages.Add(new UserChatMessage(prompt));
+        await RunAgentLoop(client, session.Messages, options, maxIterations, contextWindowSize);
+        session.Messages = ContextManager.TruncateMessages(session.Messages, contextWindowSize);
     }
 
     internal static async Task<string> RunSubAgent(ChatClient client, List<ChatMessage> messages, int maxIterations, int contextWindowSize)
