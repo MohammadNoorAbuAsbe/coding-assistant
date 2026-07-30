@@ -302,80 +302,48 @@ public static class ResponseHandler
             toolCall,
             "Expected format: {\"command\": \"<command>\"}",
             "executing command",
-            async args =>
+            args => ExecuteBashCommandAsync(toolCall, args, cancellationToken));
+    }
+
+    private static async Task<ToolChatMessage> ExecuteBashCommandAsync(ChatToolCall toolCall, ToolHandler.BashCommandCall args, CancellationToken cancellationToken)
+    {
+        if (args.command == null)
+            return CreateErrorResult(toolCall, "Error: Bash tool missing required parameter 'command'.");
+
+        bool isWindows = OperatingSystem.IsWindows();
+        using var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
             {
-                if (args.command == null)
-                {
-                    return CreateErrorResult(toolCall, "Error: Bash tool missing required parameter 'command'.");
-                }
+                FileName = isWindows ? "powershell.exe" : "bash",
+                Arguments = $"{(isWindows ? "-Command" : "-c")} \"{args.command}\"",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WorkingDirectory = Environment.CurrentDirectory
+            }
+        };
+        process.Start();
 
-                bool isWindows = OperatingSystem.IsWindows();
-                string shell = isWindows ? "powershell.exe" : "bash";
-                string argumentsPrefix = isWindows ? "-Command" : "-c";
+        int timeoutMs = Configuration.GetBashTimeout();
+        var (stdout, stderr, timedOut) = await RunProcessWithTimeoutAsync(process, timeoutMs, cancellationToken);
 
-                var processStartInfo = new ProcessStartInfo
-                {
-                    FileName = shell,
-                    Arguments = $"{argumentsPrefix} \"{args.command}\"",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    WorkingDirectory = Environment.CurrentDirectory
-                };
+        if (timedOut)
+        {
+            string partialOutput = $"stdout:\n{stdout}\n\nstderr:\n{stderr}";
+            partialOutput = ContextManager.TruncateToolResult(partialOutput, Configuration.GetMaxToolResultTokens());
+            if (cancellationToken.IsCancellationRequested)
+                return CreateErrorResult(toolCall, $"Error: command was cancelled by the user.\n\n{partialOutput}");
+            return CreateErrorResult(toolCall, $"Error: command timed out after {timeoutMs / 1000} seconds.\n\n{partialOutput}");
+        }
 
-                using var process = new Process { StartInfo = processStartInfo };
-                process.Start();
+        string result = process.ExitCode == 0
+            ? stdout
+            : $"Exit code: {process.ExitCode}\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}";
 
-                int timeoutMs = Configuration.GetBashTimeout();
-
-                var stdoutTask = Task.Run(() => process.StandardOutput.ReadToEnd());
-                var stderrTask = Task.Run(() => process.StandardError.ReadToEnd());
-
-                using var timeoutCts = new CancellationTokenSource(timeoutMs);
-                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
-
-                string stdout;
-                string stderr;
-
-                try
-                {
-                    await process.WaitForExitAsync(linkedCts.Token);
-                    stdout = await stdoutTask;
-                    stderr = await stderrTask;
-                }
-                catch (OperationCanceledException)
-                {
-                    process.Kill(entireProcessTree: true);
-                    process.WaitForExit();
-                    try { stdout = await stdoutTask; } catch { stdout = ""; }
-                    try { stderr = await stderrTask; } catch { stderr = ""; }
-
-                    string partialOutput = $"stdout:\n{stdout}\n\nstderr:\n{stderr}";
-                    int maxTokens = Configuration.GetMaxToolResultTokens();
-                    partialOutput = ContextManager.TruncateToolResult(partialOutput, maxTokens);
-
-                    if (cancellationToken.IsCancellationRequested)
-                        return CreateErrorResult(toolCall, $"Error: command was cancelled by the user.\n\n{partialOutput}");
-                    else
-                        return CreateErrorResult(toolCall, $"Error: command timed out after {timeoutMs / 1000} seconds.\n\n{partialOutput}");
-                }
-
-                string result;
-                if (process.ExitCode == 0)
-                {
-                    result = stdout;
-                }
-                else
-                {
-                    result = $"Exit code: {process.ExitCode}\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}";
-                }
-
-                int maxTokensResult = Configuration.GetMaxToolResultTokens();
-                result = ContextManager.TruncateToolResult(result, maxTokensResult);
-
-                return new ToolChatMessage(toolCall.Id, result);
-            });
+        result = ContextManager.TruncateToolResult(result, Configuration.GetMaxToolResultTokens());
+        return new ToolChatMessage(toolCall.Id, result);
     }
 
     private static ToolChatMessage? ProcessGlobCall(ChatToolCall toolCall)
@@ -410,94 +378,96 @@ public static class ResponseHandler
             toolCall,
             "Expected format: {\"pattern\": \"<regex>\"}",
             "running ripgrep",
-            async args =>
-            {
-                if (args.pattern == null)
-                {
-                    return CreateErrorResult(toolCall, "Error: Grep tool missing required parameter 'pattern'.");
-                }
-
-                string rgPath = RipgrepHelper.FindRipgrep() ?? "";
-                if (string.IsNullOrEmpty(rgPath))
-                {
-                    return CreateErrorResult(toolCall, "Error: ripgrep (rg) not found. Install it with: winget install BurntSushi.ripgrep.MSVC");
-                }
-
-                string safePath = args.path != null
-                    ? PathValidator.ValidatePath(args.path, Environment.CurrentDirectory)
-                    : Environment.CurrentDirectory;
-
-                List<string> arguments = RipgrepHelper.BuildRipgrepArguments(args, safePath);
-
-                var processStartInfo = new ProcessStartInfo
-                {
-                    FileName = rgPath,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    WorkingDirectory = Environment.CurrentDirectory
-                };
-                foreach (var arg in arguments)
-                {
-                    processStartInfo.ArgumentList.Add(arg);
-                }
-
-                using var process = new Process { StartInfo = processStartInfo };
-                process.Start();
-
-                using var timeoutCts = new CancellationTokenSource(10000);
-                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
-
-                try
-                {
-                    var stdoutTask = process.StandardOutput.ReadToEndAsync();
-                    var stderrTask = process.StandardError.ReadToEndAsync();
-
-                    await process.WaitForExitAsync(linkedCts.Token);
-
-                    string stdout = await stdoutTask;
-                    string stderr = await stderrTask;
-
-                    if (process.ExitCode == 2)
-                    {
-                        return CreateErrorResult(toolCall, $"Error: ripgrep invalid pattern '{args.pattern}': {stderr}");
-                    }
-
-                    string result;
-                    if (string.IsNullOrWhiteSpace(stdout))
-                    {
-                        result = $"No matches found for pattern: {args.pattern}";
-                    }
-                    else
-                    {
-                        string[] lines = stdout.Trim().Split('\n');
-                        if (lines.Length > 100)
-                        {
-                            result = string.Join("\n", lines.Take(100)) + $"\n\n... [showing 100 of {lines.Length} matches, refine your pattern to narrow results]";
-                        }
-                        else
-                        {
-                            result = stdout.Trim();
-                        }
-                    }
-
-                    int maxTokens = Configuration.GetMaxToolResultTokens();
-                    result = ContextManager.TruncateToolResult(result, maxTokens);
-
-                    return new ToolChatMessage(toolCall.Id, result);
-                }
-                catch (OperationCanceledException)
-                {
-                    process.Kill(entireProcessTree: true);
-                    process.WaitForExit();
-
-                    if (cancellationToken.IsCancellationRequested)
-                        return CreateErrorResult(toolCall, "Error: ripgrep search was cancelled by the user.");
-                    else
-                        return CreateErrorResult(toolCall, "Error: ripgrep search timed out after 10 seconds. Try a more specific pattern or path.");
-                }
-            });
+            args => ExecuteGrepCommandAsync(toolCall, args, cancellationToken));
     }
 
+    private static async Task<ToolChatMessage> ExecuteGrepCommandAsync(ChatToolCall toolCall, ToolHandler.GrepCall args, CancellationToken cancellationToken)
+    {
+        if (args.pattern == null)
+            return CreateErrorResult(toolCall, "Error: Grep tool missing required parameter 'pattern'.");
+
+        string rgPath = RipgrepHelper.FindRipgrep() ?? "";
+        if (string.IsNullOrEmpty(rgPath))
+            return CreateErrorResult(toolCall, "Error: ripgrep (rg) not found. Install it with: winget install BurntSushi.ripgrep.MSVC");
+
+        string safePath = args.path != null
+            ? PathValidator.ValidatePath(args.path, Environment.CurrentDirectory)
+            : Environment.CurrentDirectory;
+
+        var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = rgPath,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WorkingDirectory = Environment.CurrentDirectory
+            }
+        };
+        foreach (var arg in RipgrepHelper.BuildRipgrepArguments(args, safePath))
+        {
+            process.StartInfo.ArgumentList.Add(arg);
+        }
+        process.Start();
+
+        var (stdout, stderr, timedOut) = await RunProcessWithTimeoutAsync(process, 10000, cancellationToken);
+
+        if (timedOut)
+        {
+            if (cancellationToken.IsCancellationRequested)
+                return CreateErrorResult(toolCall, "Error: ripgrep search was cancelled by the user.");
+            return CreateErrorResult(toolCall, "Error: ripgrep search timed out after 10 seconds. Try a more specific pattern or path.");
+        }
+
+        if (process.ExitCode == 2)
+            return CreateErrorResult(toolCall, $"Error: ripgrep invalid pattern '{args.pattern}': {stderr}");
+
+        string result;
+        if (string.IsNullOrWhiteSpace(stdout))
+        {
+            result = $"No matches found for pattern: {args.pattern}";
+        }
+        else
+        {
+            string[] lines = stdout.Trim().Split('\n');
+            result = lines.Length > 100
+                ? string.Join("\n", lines.Take(100)) + $"\n\n... [showing 100 of {lines.Length} matches, refine your pattern to narrow results]"
+                : stdout.Trim();
+        }
+
+        result = ContextManager.TruncateToolResult(result, Configuration.GetMaxToolResultTokens());
+        return new ToolChatMessage(toolCall.Id, result);
+    }
+
+    private static async Task<(string stdout, string stderr, bool timedOut)> RunProcessWithTimeoutAsync(
+        Process process, int timeoutMs, CancellationToken cancellationToken)
+    {
+        var stdoutTask = Task.Run(() => process.StandardOutput.ReadToEnd());
+        var stderrTask = Task.Run(() => process.StandardError.ReadToEnd());
+
+        using var timeoutCts = new CancellationTokenSource(timeoutMs);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+
+        try
+        {
+            await process.WaitForExitAsync(linkedCts.Token);
+            return (await stdoutTask, await stderrTask, false);
+        }
+        catch (OperationCanceledException)
+        {
+            process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync();
+            var stdout = await SafeReadTask(stdoutTask);
+            var stderr = await SafeReadTask(stderrTask);
+            return (stdout, stderr, true);
+        }
+    }
+
+    private static async Task<string> SafeReadTask(Task<string> task)
+    {
+        try { return await task; }
+        catch { return ""; }
+    }
 }

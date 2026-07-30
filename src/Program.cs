@@ -63,7 +63,7 @@ while (true)
     {
         session.Reset();
         using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
-            Console.Error.WriteLine("Session reset.");
+            await Console.Error.WriteLineAsync("Session reset.");
         continue;
     }
 

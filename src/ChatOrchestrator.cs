@@ -230,7 +230,7 @@ public static class ChatOrchestrator
         messages.Add(new AssistantChatMessage(assistantToolCalls));
 
         using (ConsoleStyler.WithColor(ConsoleColor.Blue))
-            Console.Error.WriteLine("\n— Results —");
+            await Console.Error.WriteLineAsync("\n— Results —");
         var toolResultMessages = new List<ChatMessage>();
         foreach (var toolCall in assistantToolCalls)
         {

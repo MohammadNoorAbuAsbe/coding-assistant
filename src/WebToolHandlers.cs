@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
@@ -113,11 +114,9 @@ internal static class WebToolHandlers
             throw new InvalidOperationException($"Could not resolve host '{host}'.");
         }
 
-        foreach (var addr in addresses)
-        {
-            if (IsPrivateIp(addr))
-                throw new InvalidOperationException($"Requests to private IP addresses are not allowed (resolved to {addr}).");
-        }
+        var privateIp = addresses.FirstOrDefault(IsPrivateIp);
+        if (privateIp != null)
+            throw new InvalidOperationException($"Requests to private IP addresses are not allowed (resolved to {privateIp}).");
     }
 
     private static bool IsPrivateIp(IPAddress address)
