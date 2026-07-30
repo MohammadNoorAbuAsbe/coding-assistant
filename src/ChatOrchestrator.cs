@@ -105,10 +105,17 @@ public static class ChatOrchestrator
         var accumulatedToolCalls = new Dictionary<int, ToolCallAccumulator>();
         string? responseContent = null;
 
-        await foreach (var update in ChatService.GetCompletionStreaming(client, messages, options))
+        try
         {
-            ProcessContentUpdate(update.ContentUpdate, ref responseContent);
-            ProcessToolCallUpdates(update.ToolCallUpdates, accumulatedToolCalls);
+            await foreach (var update in ChatService.GetCompletionStreaming(client, messages, options))
+            {
+                ProcessContentUpdate(update.ContentUpdate, ref responseContent);
+                ProcessToolCallUpdates(update.ToolCallUpdates, accumulatedToolCalls);
+            }
+        }
+        catch (ArgumentOutOfRangeException) when (responseContent == null)
+        {
+            responseContent = "Error: The API returned an unexpected finish reason (possibly content moderation or a rate limit). Rephrase your request and try again.";
         }
 
         return (accumulatedToolCalls, responseContent);
