@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Sockets;
 using System.Text.Json;
 using OpenAI.Chat;
 using ReverseMarkdown;
@@ -6,7 +8,12 @@ namespace TerminalAiAssistant;
 
 internal static class WebToolHandlers
 {
-    private static readonly HttpClient WebClient = new()
+    private static readonly HttpClientHandler WebClientHandler = new()
+    {
+        AllowAutoRedirect = false
+    };
+
+    private static readonly HttpClient WebClient = new(WebClientHandler)
     {
         Timeout = TimeSpan.FromSeconds(30)
     };
@@ -14,6 +21,7 @@ internal static class WebToolHandlers
     private static readonly Converter HtmlToMarkdown = new();
 
     private const string TavilyApiUrl = "https://api.tavily.com/search";
+    private const int MaxRedirects = 5;
 
     internal static ToolChatMessage? ProcessWebFetchCall(ChatToolCall toolCall)
     {
@@ -28,10 +36,7 @@ internal static class WebToolHandlers
                     return ResponseHandler.CreateErrorResult(toolCall, "Error: WebFetch tool missing required parameter 'url'.");
                 }
 
-                var request = new HttpRequestMessage(HttpMethod.Get, args.url);
-                request.Headers.UserAgent.ParseAdd("TerminalAiAssistant/1.0");
-
-                var response = WebClient.Send(request);
+                using var response = SendWithRedirectValidation(args.url);
                 response.EnsureSuccessStatusCode();
 
                 string contentType = response.Content.Headers.ContentType?.MediaType ?? "";
@@ -50,6 +55,104 @@ internal static class WebToolHandlers
 
                 return new ToolChatMessage(toolCall.Id, result);
             });
+    }
+
+    private static HttpResponseMessage SendWithRedirectValidation(string url, int depth = 0)
+    {
+        if (depth > MaxRedirects)
+            throw new InvalidOperationException("Too many redirects.");
+
+        ValidateUrl(url);
+
+        var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.UserAgent.ParseAdd("TerminalAiAssistant/1.0");
+
+        var response = WebClient.Send(request);
+
+        if ((int)response.StatusCode >= 300 && (int)response.StatusCode < 400)
+        {
+            string? redirectUrl = response.Headers.Location?.OriginalString;
+            if (string.IsNullOrEmpty(redirectUrl))
+                throw new InvalidOperationException("Redirect with no Location header.");
+
+            if (!Uri.TryCreate(redirectUrl, UriKind.Absolute, out _))
+            {
+                redirectUrl = new Uri(new Uri(url), redirectUrl).ToString();
+            }
+
+            response.Dispose();
+            return SendWithRedirectValidation(redirectUrl, depth + 1);
+        }
+
+        return response;
+    }
+
+    private static void ValidateUrl(string urlString)
+    {
+        if (!Uri.TryCreate(urlString, UriKind.Absolute, out var uri))
+            throw new InvalidOperationException("Invalid URL format.");
+
+        if (uri.Scheme != "http" && uri.Scheme != "https")
+            throw new InvalidOperationException($"Scheme '{uri.Scheme}' is not allowed. Only http and https are permitted.");
+
+        string host = uri.Host.ToLowerInvariant();
+
+        if (host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "0.0.0.0")
+            throw new InvalidOperationException("Requests to localhost are not allowed.");
+
+        if (host.StartsWith("metadata.") || host == "metadata")
+            throw new InvalidOperationException("Requests to metadata endpoints are not allowed.");
+
+        IPAddress[] addresses;
+        try
+        {
+            addresses = Dns.GetHostAddresses(host);
+        }
+        catch
+        {
+            throw new InvalidOperationException($"Could not resolve host '{host}'.");
+        }
+
+        foreach (var addr in addresses)
+        {
+            if (IsPrivateIp(addr))
+                throw new InvalidOperationException($"Requests to private IP addresses are not allowed (resolved to {addr}).");
+        }
+    }
+
+    private static bool IsPrivateIp(IPAddress address)
+    {
+        if (address.AddressFamily == AddressFamily.InterNetworkV6)
+        {
+            if (address.IsIPv4MappedToIPv6)
+                address = address.MapToIPv4();
+            else
+                return address.Equals(IPAddress.IPv6Loopback) || IsPrivateIPv6(address);
+        }
+
+        byte[] bytes = address.GetAddressBytes();
+        return bytes[0] switch
+        {
+            10 => true,
+            127 => true,
+            169 when bytes[1] == 254 => true,
+            172 when bytes[1] >= 16 && bytes[1] <= 31 => true,
+            192 when bytes[1] == 168 => true,
+            _ => false
+        };
+    }
+
+    private static bool IsPrivateIPv6(IPAddress address)
+    {
+        byte[] bytes = address.GetAddressBytes();
+
+        if ((bytes[0] & 0xFE) == 0xFC)
+            return true;
+
+        if (bytes[0] == 0xFE && (bytes[1] & 0xC0) == 0x80)
+            return true;
+
+        return false;
     }
 
     internal static ToolChatMessage? ProcessWebSearchCall(ChatToolCall toolCall)
