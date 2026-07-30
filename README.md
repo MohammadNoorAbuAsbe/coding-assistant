@@ -18,6 +18,8 @@ A terminal-based AI coding assistant that uses LLMs to read, write, edit, search
 - **Web search** — Tavily integration for fetching up-to-date web content
 - **Question tool** — asks the user for decisions with multiple-choice options
 - **OpenRouter headers** — sends `HTTP-Referer` and `X-Title` for OpenRouter rankings
+- **ANSI color rendering** — renders markdown to ANSI colors for console output
+- **Path validation** — validates and sanitizes file paths for security
 
 ## Prerequisites
 
@@ -76,6 +78,7 @@ dotnet run
 | `MAX_SUB_AGENT_DEPTH` | No | `3` | Max nested sub-agent depth |
 | `CONTEXT_WINDOW_SIZE` | No | `32768` (local) / `128000` (cloud) | Max tokens for context window |
 | `MAX_TOOL_RESULT_TOKENS` | No | 40% of context window | Max tokens per tool result (auto-truncated) |
+| `BASH_TIMEOUT` | No | `120000` (ms) | Timeout for Bash tool commands |
 | `NO_COLOR` | No | — | Set to any value to disable colored console output |
 
 Any provider's base URL can be overridden via `{PROVIDER}_BASE_URL` (e.g., `OPENAI_BASE_URL`).
@@ -97,6 +100,8 @@ You can customize providers in `config.json` (in the project root or any parent 
     },
     "openrouter": {
       "displayName": "OpenRouter (Cloud)",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "defaultModel": "openrouter/free",
       "baseUrl": "https://openrouter.ai/api/v1",
       "defaultModel": "openrouter/free",
       "needsApiKey": true,
@@ -135,19 +140,26 @@ The assistant has 12 tools that it can call autonomously:
 ```
 src/
 ├── Program.cs            # Entry point with interactive loop
+├── AppBootstrapper.cs    # Provider and model resolution, cancel handler setup
+├── ChatSession.cs        # Chat session management (messages, reset, etc.)
 ├── ChatOrchestrator.cs   # Agent loop — streaming, tool dispatch, iteration
 ├── ChatService.cs        # OpenAI SDK client creation (with OpenRouter headers)
 ├── Configuration.cs      # .env / config.json loading, provider resolution
 ├── ContextManager.cs     # Token estimation and message truncation
 ├── GlobHelper.cs         # File globbing via Microsoft.Extensions.FileSystemGlobbing
 ├── MatchFinder.cs        # Fuzzy text matching for the Edit tool
+├── PathValidator.cs      # Validates and sanitizes file paths
+├── AnsiRenderer.cs       # Renders markdown to ANSI colors for console output
+├── ConsoleStyler.cs      # Helper for styling console output
 ├── MenuHandler.cs        # Interactive provider/model selection, Ollama discovery
-├── ProviderConfig.cs     # Provider configuration model
 ├── QuestionHandler.cs    # Interactive Question tool implementation
+├── ProviderConfig.cs     # Provider configuration model
 ├── ResponseHandler.cs    # Tool call execution (Read, Write, Edit, EditLine, Bash, Glob, Grep)
 ├── RipgrepHelper.cs      # ripgrep argument builder and path finder
 ├── SystemPrompt.cs       # System prompts (local vs cloud variants)
 ├── TavilyModels.cs       # Tavily search response models
+├── TaskHandler.cs        # Task tool implementation (sub-agents)
+├── TodoWriteHandler.cs   # TodoWrite tool implementation (task lists)
 ├── ToolHandler.cs        # Tool definitions and OpenAI function schemas
 └── WebToolHandlers.cs    # WebFetch and WebSearch tool implementations
 ```
@@ -159,3 +171,77 @@ dotnet build
 ```
 
 The compiled output will be in `bin/Debug/net10.0/`.
+
+## Usage Examples
+
+### Interactive Mode
+
+Run `dotnet run` and follow the prompts to:
+1. Select a provider (Ollama, OpenRouter, OpenAI)
+2. Select a model
+3. Enter your prompt
+4. The assistant will use tools to complete the task and return a summary
+
+### Non-Interactive Mode
+
+Set environment variables to skip the menu:
+
+```sh
+# Using OpenAI
+set AI_PROVIDER=openai
+set AI_MODEL=gpt-4o
+dotnet run "Explain how to implement a binary search tree in C#"
+
+# Using Ollama with a specific model
+set AI_PROVIDER=ollama
+set AI_MODEL=qwen3:8b
+dotnet run "Create a REST API endpoint for user management"
+```
+
+### Tool Usage Examples
+
+The assistant can autonomously use tools like:
+
+- **Read a file**: `Read` tool with `file_path: "src/Program.cs"`
+- **Write a new file**: `Write` tool with `file_path: "src/NewFeature.cs"` and content
+- **Edit existing code**: `EditLine` tool to replace specific lines
+- **Search code**: `Grep` tool to find patterns across files
+- **Run commands**: `Bash` tool to execute `dotnet build` or run tests
+- **Search the web**: `WebSearch` tool for up-to-date information
+- **Fetch web content**: `WebFetch` tool to get documentation from URLs
+- **Ask questions**: `Question` tool when clarification is needed
+- **Delegate tasks**: `Task` tool to launch sub-agents for complex subtasks
+- **Manage todos**: `TodoWrite` tool to track progress on multi-step tasks
+
+## Configuration Details
+
+### Provider Configuration
+
+Each provider in `config.json` can have:
+- `displayName`: Friendly name shown in the menu
+- `baseUrl`: Base URL for API endpoints
+- `defaultModel`: Default model to use when none is specified
+- `needsApiKey`: Whether the provider requires an API key
+- `apiKeyEnvVar`: Environment variable name for the API key
+- `siteUrlEnvVar`: Environment variable for HTTP-Referer header (OpenRouter only)
+- `siteNameEnvVar`: Environment variable for X-Title header (OpenRouter only)
+- `models`: List of available models for this provider
+
+### Context Management
+
+The assistant automatically manages context to prevent token overflow:
+- Messages are truncated when they exceed the context window
+- Tool results are truncated to a configurable percentage of the context window
+- System prompts are preserved when possible
+
+### Tool Result Truncation
+
+Tool results that exceed `MAX_TOOL_RESULT_TOKENS` (default 40% of context window) are automatically truncated to prevent overwhelming the context window.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is licensed under the MIT License.
