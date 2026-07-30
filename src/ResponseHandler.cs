@@ -304,10 +304,30 @@ public static class ResponseHandler
                 using var process = new Process { StartInfo = processStartInfo };
                 process.Start();
 
-                string stdout = process.StandardOutput.ReadToEnd();
-                string stderr = process.StandardError.ReadToEnd();
+                int timeoutMs = Configuration.GetBashTimeout();
 
-                process.WaitForExit();
+                string stdout = "";
+                string stderr = "";
+
+                var stdoutTask = Task.Run(() => process.StandardOutput.ReadToEnd());
+                var stderrTask = Task.Run(() => process.StandardError.ReadToEnd());
+
+                if (process.WaitForExit(timeoutMs))
+                {
+                    stdout = stdoutTask.Result;
+                    stderr = stderrTask.Result;
+                }
+                else
+                {
+                    process.Kill();
+                    process.WaitForExit();
+                    try { stdout = stdoutTask.Result; } catch { }
+                    try { stderr = stderrTask.Result; } catch { }
+                    string partialOutput = $"stdout:\n{stdout}\n\nstderr:\n{stderr}";
+                    int maxTokens = Configuration.GetMaxToolResultTokens();
+                    partialOutput = ContextManager.TruncateToolResult(partialOutput, maxTokens);
+                    return CreateErrorResult(toolCall, $"Error: command timed out after {timeoutMs / 1000} seconds.\n\n{partialOutput}");
+                }
 
                 string result;
                 if (process.ExitCode == 0)
@@ -319,8 +339,8 @@ public static class ResponseHandler
                     result = $"Exit code: {process.ExitCode}\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}";
                 }
 
-                int maxTokens = Configuration.GetMaxToolResultTokens();
-                result = ContextManager.TruncateToolResult(result, maxTokens);
+                int maxTokensResult = Configuration.GetMaxToolResultTokens();
+                result = ContextManager.TruncateToolResult(result, maxTokensResult);
 
                 return new ToolChatMessage(toolCall.Id, result);
             });
