@@ -11,12 +11,12 @@ public static class ResponseHandler
         PropertyNameCaseInsensitive = true
     };
 
-    public static async Task<List<ChatMessage>> ProcessToolCallsAsync(ChatCompletion response)
+    public static async Task<List<ChatMessage>> ProcessToolCallsAsync(ChatCompletion response, CancellationToken cancellationToken = default)
     {
-        return await ProcessToolCallsAsync(response.ToolCalls);
+        return await ProcessToolCallsAsync(response.ToolCalls, cancellationToken);
     }
 
-    public static async Task<List<ChatMessage>> ProcessToolCallsAsync(IReadOnlyList<ChatToolCall>? toolCalls)
+    public static async Task<List<ChatMessage>> ProcessToolCallsAsync(IReadOnlyList<ChatToolCall>? toolCalls, CancellationToken cancellationToken = default)
     {
         var toolResultMessages = new List<ChatMessage>();
 
@@ -27,7 +27,7 @@ public static class ResponseHandler
 
         foreach (var toolCall in toolCalls)
         {
-            var result = await ProcessToolCall(toolCall);
+            var result = await ProcessToolCall(toolCall, cancellationToken);
             if (result != null)
             {
                 toolResultMessages.Add(result);
@@ -37,7 +37,7 @@ public static class ResponseHandler
         return toolResultMessages;
     }
 
-    private static async Task<ToolChatMessage?> ProcessToolCall(ChatToolCall toolCall)
+    private static async Task<ToolChatMessage?> ProcessToolCall(ChatToolCall toolCall, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(toolCall.FunctionName))
         {
@@ -50,22 +50,22 @@ public static class ResponseHandler
             ToolHandler.WriteFunctionName => Task.FromResult<ToolChatMessage?>(ProcessWriteFileCall(toolCall)),
             ToolHandler.EditFunctionName => Task.FromResult<ToolChatMessage?>(ProcessEditFileCall(toolCall)),
             ToolHandler.EditLineFunctionName => Task.FromResult<ToolChatMessage?>(ProcessEditLineCall(toolCall)),
-            ToolHandler.BashFunctionName => Task.FromResult<ToolChatMessage?>(ProcessBashCall(toolCall)),
+            ToolHandler.BashFunctionName => ProcessBashCallAsync(toolCall, cancellationToken),
             ToolHandler.GlobFunctionName => Task.FromResult<ToolChatMessage?>(ProcessGlobCall(toolCall)),
-            ToolHandler.GrepFunctionName => Task.FromResult<ToolChatMessage?>(ProcessGrepCall(toolCall)),
-            ToolHandler.WebFetchFunctionName => WebToolHandlers.ProcessWebFetchCallAsync(toolCall),
-            ToolHandler.WebSearchFunctionName => WebToolHandlers.ProcessWebSearchCallAsync(toolCall),
+            ToolHandler.GrepFunctionName => ProcessGrepCallAsync(toolCall, cancellationToken),
+            ToolHandler.WebFetchFunctionName => WebToolHandlers.ProcessWebFetchCallAsync(toolCall, cancellationToken),
+            ToolHandler.WebSearchFunctionName => WebToolHandlers.ProcessWebSearchCallAsync(toolCall, cancellationToken),
             ToolHandler.QuestionFunctionName => Task.FromResult<ToolChatMessage?>(QuestionHandler.ProcessQuestionCall(toolCall)),
-            ToolHandler.TaskFunctionName => TaskHandler.ProcessTaskCallAsync(toolCall),
+            ToolHandler.TaskFunctionName => TaskHandler.ProcessTaskCallAsync(toolCall, cancellationToken),
             ToolHandler.TodoWriteFunctionName => Task.FromResult<ToolChatMessage?>(TodoWriteHandler.ProcessTodoWriteCall(toolCall)),
             _ => Task.FromResult<ToolChatMessage?>(CreateErrorResult(toolCall, $"Error: unknown function '{toolCall.FunctionName}'. Available functions: {ToolHandler.ReadFunctionName}, {ToolHandler.WriteFunctionName}, {ToolHandler.EditFunctionName}, {ToolHandler.EditLineFunctionName}, {ToolHandler.BashFunctionName}, {ToolHandler.GlobFunctionName}, {ToolHandler.GrepFunctionName}, {ToolHandler.WebFetchFunctionName}, {ToolHandler.WebSearchFunctionName}, {ToolHandler.QuestionFunctionName}, {ToolHandler.TaskFunctionName}, {ToolHandler.TodoWriteFunctionName}."))
         };
         return await task;
     }
 
-    internal static async Task<ToolChatMessage?> ProcessSingleToolCallAsync(ChatToolCall toolCall)
+    internal static async Task<ToolChatMessage?> ProcessSingleToolCallAsync(ChatToolCall toolCall, CancellationToken cancellationToken = default)
     {
-        return await ProcessToolCall(toolCall);
+        return await ProcessToolCall(toolCall, cancellationToken);
     }
 
     internal static ToolChatMessage CreateErrorResult(ChatToolCall toolCall, string errorMessage)
@@ -296,13 +296,13 @@ public static class ResponseHandler
             });
     }
 
-    private static ToolChatMessage? ProcessBashCall(ChatToolCall toolCall)
+    private static async Task<ToolChatMessage?> ProcessBashCallAsync(ChatToolCall toolCall, CancellationToken cancellationToken)
     {
-        return ExecuteToolCall<ToolHandler.BashCommandCall>(
+        return await ExecuteToolCallAsync<ToolHandler.BashCommandCall>(
             toolCall,
             "Expected format: {\"command\": \"<command>\"}",
             "executing command",
-            args =>
+            async args =>
             {
                 if (args.command == null)
                 {
@@ -329,27 +329,36 @@ public static class ResponseHandler
 
                 int timeoutMs = Configuration.GetBashTimeout();
 
-                string stdout = "";
-                string stderr = "";
-
                 var stdoutTask = Task.Run(() => process.StandardOutput.ReadToEnd());
                 var stderrTask = Task.Run(() => process.StandardError.ReadToEnd());
 
-                if (process.WaitForExit(timeoutMs))
+                using var timeoutCts = new CancellationTokenSource(timeoutMs);
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+
+                string stdout;
+                string stderr;
+
+                try
                 {
-                    stdout = stdoutTask.Result;
-                    stderr = stderrTask.Result;
+                    await process.WaitForExitAsync(linkedCts.Token);
+                    stdout = await stdoutTask;
+                    stderr = await stderrTask;
                 }
-                else
+                catch (OperationCanceledException)
                 {
-                    process.Kill();
+                    process.Kill(entireProcessTree: true);
                     process.WaitForExit();
-                    try { stdout = stdoutTask.Result; } catch { }
-                    try { stderr = stderrTask.Result; } catch { }
+                    try { stdout = await stdoutTask; } catch { stdout = ""; }
+                    try { stderr = await stderrTask; } catch { stderr = ""; }
+
                     string partialOutput = $"stdout:\n{stdout}\n\nstderr:\n{stderr}";
                     int maxTokens = Configuration.GetMaxToolResultTokens();
                     partialOutput = ContextManager.TruncateToolResult(partialOutput, maxTokens);
-                    return CreateErrorResult(toolCall, $"Error: command timed out after {timeoutMs / 1000} seconds.\n\n{partialOutput}");
+
+                    if (cancellationToken.IsCancellationRequested)
+                        return CreateErrorResult(toolCall, $"Error: command was cancelled by the user.\n\n{partialOutput}");
+                    else
+                        return CreateErrorResult(toolCall, $"Error: command timed out after {timeoutMs / 1000} seconds.\n\n{partialOutput}");
                 }
 
                 string result;
@@ -395,13 +404,13 @@ public static class ResponseHandler
             });
     }
 
-    private static ToolChatMessage? ProcessGrepCall(ChatToolCall toolCall)
+    private static async Task<ToolChatMessage?> ProcessGrepCallAsync(ChatToolCall toolCall, CancellationToken cancellationToken)
     {
-        return ExecuteToolCall<ToolHandler.GrepCall>(
+        return await ExecuteToolCallAsync<ToolHandler.GrepCall>(
             toolCall,
             "Expected format: {\"pattern\": \"<regex>\"}",
             "running ripgrep",
-            args =>
+            async args =>
             {
                 if (args.pattern == null)
                 {
@@ -437,44 +446,57 @@ public static class ResponseHandler
                 using var process = new Process { StartInfo = processStartInfo };
                 process.Start();
 
-                string stdout = process.StandardOutput.ReadToEnd();
-                string stderr = process.StandardError.ReadToEnd();
+                using var timeoutCts = new CancellationTokenSource(10000);
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
 
-                bool finished = process.WaitForExit(10000);
+                try
+                {
+                    var stdoutTask = process.StandardOutput.ReadToEndAsync();
+                    var stderrTask = process.StandardError.ReadToEndAsync();
 
-                if (!finished)
-                {
-                    process.Kill();
-                    return CreateErrorResult(toolCall, "Error: ripgrep search timed out after 10 seconds. Try a more specific pattern or path.");
-                }
+                    await process.WaitForExitAsync(linkedCts.Token);
 
-                if (process.ExitCode == 2)
-                {
-                    return CreateErrorResult(toolCall, $"Error: ripgrep invalid pattern '{args.pattern}': {stderr}");
-                }
+                    string stdout = await stdoutTask;
+                    string stderr = await stderrTask;
 
-                string result;
-                if (string.IsNullOrWhiteSpace(stdout))
-                {
-                    result = $"No matches found for pattern: {args.pattern}";
-                }
-                else
-                {
-                    string[] lines = stdout.Trim().Split('\n');
-                    if (lines.Length > 100)
+                    if (process.ExitCode == 2)
                     {
-                        result = string.Join("\n", lines.Take(100)) + $"\n\n... [showing 100 of {lines.Length} matches, refine your pattern to narrow results]";
+                        return CreateErrorResult(toolCall, $"Error: ripgrep invalid pattern '{args.pattern}': {stderr}");
+                    }
+
+                    string result;
+                    if (string.IsNullOrWhiteSpace(stdout))
+                    {
+                        result = $"No matches found for pattern: {args.pattern}";
                     }
                     else
                     {
-                        result = stdout.Trim();
+                        string[] lines = stdout.Trim().Split('\n');
+                        if (lines.Length > 100)
+                        {
+                            result = string.Join("\n", lines.Take(100)) + $"\n\n... [showing 100 of {lines.Length} matches, refine your pattern to narrow results]";
+                        }
+                        else
+                        {
+                            result = stdout.Trim();
+                        }
                     }
+
+                    int maxTokens = Configuration.GetMaxToolResultTokens();
+                    result = ContextManager.TruncateToolResult(result, maxTokens);
+
+                    return new ToolChatMessage(toolCall.Id, result);
                 }
+                catch (OperationCanceledException)
+                {
+                    process.Kill(entireProcessTree: true);
+                    process.WaitForExit();
 
-                int maxTokens = Configuration.GetMaxToolResultTokens();
-                result = ContextManager.TruncateToolResult(result, maxTokens);
-
-                return new ToolChatMessage(toolCall.Id, result);
+                    if (cancellationToken.IsCancellationRequested)
+                        return CreateErrorResult(toolCall, "Error: ripgrep search was cancelled by the user.");
+                    else
+                        return CreateErrorResult(toolCall, "Error: ripgrep search timed out after 10 seconds. Try a more specific pattern or path.");
+                }
             });
     }
 

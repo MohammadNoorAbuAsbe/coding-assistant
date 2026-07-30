@@ -34,6 +34,20 @@ Configuration.SetModel(model);
 
 var session = new ChatSession();
 
+using var cts = new CancellationTokenSource();
+var cancelPressed = false;
+
+Console.CancelKeyPress += (sender, e) =>
+{
+    if (cancelPressed)
+        return;
+
+    e.Cancel = true;
+    cancelPressed = true;
+    Console.Error.WriteLine("\n[Interrupted] Cancelling...");
+    cts.Cancel();
+};
+
 while (true)
 {
     var prompt = MenuHandler.GetPrompt();
@@ -53,5 +67,5 @@ while (true)
         continue;
     }
 
-    await ChatOrchestrator.Run(session, prompt);
+    await ChatOrchestrator.Run(session, prompt, cts.Token);
 }
