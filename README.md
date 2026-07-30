@@ -6,7 +6,8 @@ A terminal-based AI coding assistant that uses LLMs to read, write, edit, search
 
 - **Multi-provider** — Ollama (local), OpenRouter, and OpenAI (cloud)
 - **Interactive menu** — select provider, model, and enter prompts in a loop
-- **10 tools**: Read, Write, Edit (fuzzy match), EditLine (by line number), Bash, Glob, Grep (ripgrep), WebFetch (URLs), WebSearch (Tavily), Question (interactive)
+- **12 tools**: Read, Write, Edit (fuzzy match), EditLine (by line number), Bash, Glob, Grep (ripgrep), WebFetch (URLs), WebSearch (Tavily), Question (interactive), Task (sub-agents), TodoWrite (task lists)
+- **Sub-agents** — delegate complex subtasks to independent sub-agents with their own tool loop
 - **Streaming** — responses appear in real-time as the model generates them
 - **Context window management** — automatic truncation to prevent token overflow
 - **Iteration limits** — prevents infinite loops (configurable, default 20)
@@ -72,8 +73,10 @@ dotnet run
 | `TAVILY_API_KEY` | For WebSearch | — | API key for Tavily web search (get at https://tavily.com) |
 | `SYSTEM_PROMPT` | No | (built-in) | Override the system prompt |
 | `MAX_ITERATIONS` | No | `20` | Max tool-call iterations before stopping |
+| `MAX_SUB_AGENT_DEPTH` | No | `3` | Max nested sub-agent depth |
 | `CONTEXT_WINDOW_SIZE` | No | `32768` (local) / `128000` (cloud) | Max tokens for context window |
 | `MAX_TOOL_RESULT_TOKENS` | No | 40% of context window | Max tokens per tool result (auto-truncated) |
+| `NO_COLOR` | No | — | Set to any value to disable colored console output |
 
 Any provider's base URL can be overridden via `{PROVIDER}_BASE_URL` (e.g., `OPENAI_BASE_URL`).
 
@@ -110,7 +113,7 @@ Available built-in providers: `ollama`, `openrouter`, `openai`. Entries in `conf
 
 ## Available Tools
 
-The assistant has 10 tools that it can call autonomously:
+The assistant has 12 tools that it can call autonomously:
 
 | Tool | Description |
 |------|-------------|
@@ -124,6 +127,8 @@ The assistant has 10 tools that it can call autonomously:
 | **WebFetch** | Fetch and return the contents of a URL (converts HTML to markdown) |
 | **WebSearch** | Search the web for current information using Tavily |
 | **Question** | Ask the user a question with multiple-choice options for decisions |
+| **Task** | Launch a sub-agent for complex subtasks (independent tool loop, all tools except Task) |
+| **TodoWrite** | Create and manage a structured task list to track multi-step progress |
 
 ## Project Structure
 
