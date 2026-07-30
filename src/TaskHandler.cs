@@ -65,7 +65,6 @@ You are a coding assistant sub-agent working on a specific task delegated by the
         var client = ChatService.CreateClient();
         var maxIterations = Configuration.GetMaxIterations();
         var contextWindowSize = Configuration.GetContextWindowSize();
-        var provider = Configuration.GetProvider();
 
         var messages = new List<ChatMessage>
         {

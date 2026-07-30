@@ -33,16 +33,18 @@ public static class ToolHandler
     private const string FilePathPropertyName = "file_path";
 
     private const string PatternParameter = "pattern";
+    private const string DescriptionParamater = "description";
+    private const string ContentParamater = "content";
 
     public static ChatTool CreateReadTool() =>
         CreateTool(ReadFunctionName, ReadFunctionDescription, [FilePathPropertyName],
             StringProperties((FilePathPropertyName, "The path to the file to read")));
 
     public static ChatTool CreateWriteTool() =>
-        CreateTool(WriteFunctionName, WriteFunctionDescription, [FilePathPropertyName, "content"],
+        CreateTool(WriteFunctionName, WriteFunctionDescription, [FilePathPropertyName, ContentParamater],
             StringProperties(
                 (FilePathPropertyName, "The path of the file to write to"),
-                ("content", "The content to write to the file")));
+                (ContentParamater, "The content to write to the file")));
 
     public static ChatTool CreateEditTool() =>
         CreateTool(EditFunctionName, EditFunctionDescription, [FilePathPropertyName, "old_string", "new_string"],
@@ -102,7 +104,7 @@ public static class ToolHandler
                 ["options"] = new Dictionary<string, object>
                 {
                     ["type"] = "array",
-                    ["description"] = "Available choices for the user (2-6 recommended)",
+                    [DescriptionParamater] = "Available choices for the user (2-6 recommended)",
                     ["items"] = new Dictionary<string, object>
                     {
                         ["type"] = "object",
@@ -110,7 +112,7 @@ public static class ToolHandler
                         ["properties"] = new Dictionary<string, object>
                         {
                             ["label"] = StringProp("Display text for the choice (1-5 words, concise)"),
-                            ["description"] = StringProp("Explanation of what this choice means")
+                            [DescriptionParamater] = StringProp("Explanation of what this choice means")
                         }
                     }
                 },
@@ -118,9 +120,9 @@ public static class ToolHandler
             });
 
     public static ChatTool CreateTaskTool() =>
-        CreateTool(TaskFunctionName, TaskFunctionDescription, ["description"],
+        CreateTool(TaskFunctionName, TaskFunctionDescription, [DescriptionParamater],
             StringProperties(
-                ("description", "The task description for the sub-agent. Be clear, specific, and include all necessary context from the current session."),
+                (DescriptionParamater, "The task description for the sub-agent. Be clear, specific, and include all necessary context from the current session."),
                 ("subagent_type", "Optional sub-agent type (default: 'general'). Reserved for future use.")));
 
     public static ChatTool CreateTodoWriteTool() =>
@@ -130,14 +132,14 @@ public static class ToolHandler
                 ["todos"] = new Dictionary<string, object>
                 {
                     ["type"] = "array",
-                    ["description"] = "Task list items",
+                    [DescriptionParamater] = "Task list items",
                     ["items"] = new Dictionary<string, object>
                     {
                         ["type"] = "object",
-                        ["required"] = new[] { "content" },
+                        ["required"] = new[] { ContentParamater },
                         ["properties"] = new Dictionary<string, object>
                         {
-                            ["content"] = StringProp("Brief description of the task"),
+                            [ContentParamater] = StringProp("Brief description of the task"),
                             ["status"] = StringProp("Status: 'pending', 'in_progress', 'completed', or 'cancelled' (default: 'pending')"),
                             ["priority"] = StringProp("Priority: 'high', 'medium', or 'low' (default: 'medium')")
                         }
@@ -205,14 +207,14 @@ public static class ToolHandler
         props.ToDictionary(p => p.name, p => (object)new Dictionary<string, object>
         {
             ["type"] = "string",
-            ["description"] = p.description
+            [DescriptionParamater] = p.description
         });
 
     private static Dictionary<string, object> StringProp(string description) =>
         new()
         {
             ["type"] = "string",
-            ["description"] = description
+            [DescriptionParamater] = description
         };
 
     public class ReadFileCall
