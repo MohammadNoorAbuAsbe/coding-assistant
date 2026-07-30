@@ -50,9 +50,12 @@ internal static class PathValidator
         if (!fullWorkspaceRoot.EndsWith(Path.DirectorySeparatorChar.ToString()))
             fullWorkspaceRoot += Path.DirectorySeparatorChar;
 
+        if (!fullPath.EndsWith(Path.DirectorySeparatorChar.ToString()))
+            fullPath += Path.DirectorySeparatorChar;
+
         if (!fullPath.StartsWith(fullWorkspaceRoot, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
             throw new PathOutsideWorkspaceException(userPath);
 
-        return fullPath;
+        return fullPath.TrimEnd(Path.DirectorySeparatorChar);
     }
 }
