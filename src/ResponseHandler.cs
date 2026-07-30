@@ -11,12 +11,12 @@ public static class ResponseHandler
         PropertyNameCaseInsensitive = true
     };
 
-    public static List<ChatMessage> ProcessToolCalls(ChatCompletion response)
+    public static async Task<List<ChatMessage>> ProcessToolCallsAsync(ChatCompletion response)
     {
-        return ProcessToolCalls(response.ToolCalls);
+        return await ProcessToolCallsAsync(response.ToolCalls);
     }
 
-    public static List<ChatMessage> ProcessToolCalls(IReadOnlyList<ChatToolCall>? toolCalls)
+    public static async Task<List<ChatMessage>> ProcessToolCallsAsync(IReadOnlyList<ChatToolCall>? toolCalls)
     {
         var toolResultMessages = new List<ChatMessage>();
 
@@ -27,7 +27,7 @@ public static class ResponseHandler
 
         foreach (var toolCall in toolCalls)
         {
-            var result = ProcessToolCall(toolCall);
+            var result = await ProcessToolCall(toolCall);
             if (result != null)
             {
                 toolResultMessages.Add(result);
@@ -37,34 +37,35 @@ public static class ResponseHandler
         return toolResultMessages;
     }
 
-    private static ToolChatMessage? ProcessToolCall(ChatToolCall toolCall)
+    private static async Task<ToolChatMessage?> ProcessToolCall(ChatToolCall toolCall)
     {
         if (string.IsNullOrEmpty(toolCall.FunctionName))
         {
             return CreateErrorResult(toolCall, "Error: received tool call with no function name.");
         }
 
-        return toolCall.FunctionName switch
+        Task<ToolChatMessage?> task = toolCall.FunctionName switch
         {
-            ToolHandler.ReadFunctionName => ProcessReadFileCall(toolCall),
-            ToolHandler.WriteFunctionName => ProcessWriteFileCall(toolCall),
-            ToolHandler.EditFunctionName => ProcessEditFileCall(toolCall),
-            ToolHandler.EditLineFunctionName => ProcessEditLineCall(toolCall),
-            ToolHandler.BashFunctionName => ProcessBashCall(toolCall),
-            ToolHandler.GlobFunctionName => ProcessGlobCall(toolCall),
-            ToolHandler.GrepFunctionName => ProcessGrepCall(toolCall),
-            ToolHandler.WebFetchFunctionName => WebToolHandlers.ProcessWebFetchCall(toolCall),
-            ToolHandler.WebSearchFunctionName => WebToolHandlers.ProcessWebSearchCall(toolCall),
-            ToolHandler.QuestionFunctionName => QuestionHandler.ProcessQuestionCall(toolCall),
-            ToolHandler.TaskFunctionName => TaskHandler.ProcessTaskCall(toolCall),
-            ToolHandler.TodoWriteFunctionName => TodoWriteHandler.ProcessTodoWriteCall(toolCall),
-            _ => CreateErrorResult(toolCall, $"Error: unknown function '{toolCall.FunctionName}'. Available functions: {ToolHandler.ReadFunctionName}, {ToolHandler.WriteFunctionName}, {ToolHandler.EditFunctionName}, {ToolHandler.EditLineFunctionName}, {ToolHandler.BashFunctionName}, {ToolHandler.GlobFunctionName}, {ToolHandler.GrepFunctionName}, {ToolHandler.WebFetchFunctionName}, {ToolHandler.WebSearchFunctionName}, {ToolHandler.QuestionFunctionName}, {ToolHandler.TaskFunctionName}, {ToolHandler.TodoWriteFunctionName}.")
+            ToolHandler.ReadFunctionName => Task.FromResult<ToolChatMessage?>(ProcessReadFileCall(toolCall)),
+            ToolHandler.WriteFunctionName => Task.FromResult<ToolChatMessage?>(ProcessWriteFileCall(toolCall)),
+            ToolHandler.EditFunctionName => Task.FromResult<ToolChatMessage?>(ProcessEditFileCall(toolCall)),
+            ToolHandler.EditLineFunctionName => Task.FromResult<ToolChatMessage?>(ProcessEditLineCall(toolCall)),
+            ToolHandler.BashFunctionName => Task.FromResult<ToolChatMessage?>(ProcessBashCall(toolCall)),
+            ToolHandler.GlobFunctionName => Task.FromResult<ToolChatMessage?>(ProcessGlobCall(toolCall)),
+            ToolHandler.GrepFunctionName => Task.FromResult<ToolChatMessage?>(ProcessGrepCall(toolCall)),
+            ToolHandler.WebFetchFunctionName => WebToolHandlers.ProcessWebFetchCallAsync(toolCall),
+            ToolHandler.WebSearchFunctionName => WebToolHandlers.ProcessWebSearchCallAsync(toolCall),
+            ToolHandler.QuestionFunctionName => Task.FromResult<ToolChatMessage?>(QuestionHandler.ProcessQuestionCall(toolCall)),
+            ToolHandler.TaskFunctionName => TaskHandler.ProcessTaskCallAsync(toolCall),
+            ToolHandler.TodoWriteFunctionName => Task.FromResult<ToolChatMessage?>(TodoWriteHandler.ProcessTodoWriteCall(toolCall)),
+            _ => Task.FromResult<ToolChatMessage?>(CreateErrorResult(toolCall, $"Error: unknown function '{toolCall.FunctionName}'. Available functions: {ToolHandler.ReadFunctionName}, {ToolHandler.WriteFunctionName}, {ToolHandler.EditFunctionName}, {ToolHandler.EditLineFunctionName}, {ToolHandler.BashFunctionName}, {ToolHandler.GlobFunctionName}, {ToolHandler.GrepFunctionName}, {ToolHandler.WebFetchFunctionName}, {ToolHandler.WebSearchFunctionName}, {ToolHandler.QuestionFunctionName}, {ToolHandler.TaskFunctionName}, {ToolHandler.TodoWriteFunctionName}."))
         };
+        return await task;
     }
 
-    internal static ToolChatMessage? ProcessSingleToolCall(ChatToolCall toolCall)
+    internal static async Task<ToolChatMessage?> ProcessSingleToolCallAsync(ChatToolCall toolCall)
     {
-        return ProcessToolCall(toolCall);
+        return await ProcessToolCall(toolCall);
     }
 
     internal static ToolChatMessage CreateErrorResult(ChatToolCall toolCall, string errorMessage)
@@ -105,6 +106,28 @@ public static class ResponseHandler
         try
         {
             return execute(arguments);
+        }
+        catch (Exception ex)
+        {
+            return CreateErrorResult(toolCall, $"Error {errorPrefix}: {ex.Message}");
+        }
+    }
+
+    internal static async Task<ToolChatMessage?> ExecuteToolCallAsync<T>(
+        ChatToolCall toolCall,
+        string formatError,
+        string errorPrefix,
+        Func<T, Task<ToolChatMessage>> execute) where T : class
+    {
+        var arguments = DeserializeToolArguments<T>(toolCall);
+        if (arguments == null)
+        {
+            return CreateErrorResult(toolCall, $"Error: {toolCall.FunctionName} tool called with invalid arguments. {formatError}");
+        }
+
+        try
+        {
+            return await execute(arguments);
         }
         catch (Exception ex)
         {

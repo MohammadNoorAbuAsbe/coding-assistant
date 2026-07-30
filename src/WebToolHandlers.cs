@@ -23,24 +23,24 @@ internal static class WebToolHandlers
     private const string TavilyApiUrl = "https://api.tavily.com/search";
     private const int MaxRedirects = 5;
 
-    internal static ToolChatMessage? ProcessWebFetchCall(ChatToolCall toolCall)
+    internal static async Task<ToolChatMessage?> ProcessWebFetchCallAsync(ChatToolCall toolCall)
     {
-        return ResponseHandler.ExecuteToolCall<ToolHandler.WebFetchCall>(
+        return await ResponseHandler.ExecuteToolCallAsync<ToolHandler.WebFetchCall>(
             toolCall,
             "Expected format: {\"url\": \"<url>\"}",
             "fetching URL",
-            args =>
+            async args =>
             {
                 if (args.url == null)
                 {
                     return ResponseHandler.CreateErrorResult(toolCall, "Error: WebFetch tool missing required parameter 'url'.");
                 }
 
-                using var response = SendWithRedirectValidation(args.url);
+                using var response = await SendWithRedirectValidationAsync(args.url);
                 response.EnsureSuccessStatusCode();
 
                 string contentType = response.Content.Headers.ContentType?.MediaType ?? "";
-                string raw = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                string raw = await response.Content.ReadAsStringAsync();
 
                 string result = args.format switch
                 {
@@ -57,7 +57,7 @@ internal static class WebToolHandlers
             });
     }
 
-    private static HttpResponseMessage SendWithRedirectValidation(string url, int depth = 0)
+    private static async Task<HttpResponseMessage> SendWithRedirectValidationAsync(string url, int depth = 0)
     {
         if (depth > MaxRedirects)
             throw new InvalidOperationException("Too many redirects.");
@@ -67,7 +67,7 @@ internal static class WebToolHandlers
         var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.UserAgent.ParseAdd("TerminalAiAssistant/1.0");
 
-        var response = WebClient.Send(request);
+        var response = await WebClient.SendAsync(request);
 
         if ((int)response.StatusCode >= 300 && (int)response.StatusCode < 400)
         {
@@ -81,7 +81,7 @@ internal static class WebToolHandlers
             }
 
             response.Dispose();
-            return SendWithRedirectValidation(redirectUrl, depth + 1);
+            return await SendWithRedirectValidationAsync(redirectUrl, depth + 1);
         }
 
         return response;
@@ -155,13 +155,13 @@ internal static class WebToolHandlers
         return false;
     }
 
-    internal static ToolChatMessage? ProcessWebSearchCall(ChatToolCall toolCall)
+    internal static async Task<ToolChatMessage?> ProcessWebSearchCallAsync(ChatToolCall toolCall)
     {
-        return ResponseHandler.ExecuteToolCall<ToolHandler.WebSearchCall>(
+        return await ResponseHandler.ExecuteToolCallAsync<ToolHandler.WebSearchCall>(
             toolCall,
             "Expected format: {\"query\": \"<search query>\"}",
             "searching web",
-            args =>
+            async args =>
             {
                 if (args.query == null)
                 {
@@ -171,7 +171,7 @@ internal static class WebToolHandlers
                 int maxResults = ParseMaxResults(args.max_results);
                 string depth = args.search_depth == "advanced" ? "advanced" : "basic";
 
-                var tavilyResponse = SearchTavily(args.query, maxResults, depth);
+                var tavilyResponse = await SearchTavilyAsync(args.query, maxResults, depth);
                 if (tavilyResponse == null)
                 {
                     return ResponseHandler.CreateErrorResult(toolCall, "Error: received empty response from Tavily search API.");
@@ -193,7 +193,7 @@ internal static class WebToolHandlers
         return Math.Clamp(value, 1, 10);
     }
 
-    private static TavilyResponse? SearchTavily(string query, int maxResults, string depth)
+    private static async Task<TavilyResponse?> SearchTavilyAsync(string query, int maxResults, string depth)
     {
         string apiKey = Configuration.GetTavilyApiKey();
 
@@ -211,10 +211,10 @@ internal static class WebToolHandlers
             System.Text.Encoding.UTF8,
             "application/json");
 
-        var response = WebClient.Send(request);
+        var response = await WebClient.SendAsync(request);
         response.EnsureSuccessStatusCode();
 
-        string json = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+        string json = await response.Content.ReadAsStringAsync();
         return JsonSerializer.Deserialize<TavilyResponse>(json, ResponseHandler.JsonOptions);
     }
 

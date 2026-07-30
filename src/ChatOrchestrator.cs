@@ -49,7 +49,7 @@ public static class ChatOrchestrator
             }
 
             await Console.Error.WriteLineAsync();
-            messages = FinalizeToolCalls(accumulatedToolCalls, messages, contextWindowSize);
+            messages = await FinalizeToolCallsAsync(accumulatedToolCalls, messages, contextWindowSize);
         }
 
         return finalResponse ?? "Sub-agent completed without producing a text response.";
@@ -90,7 +90,7 @@ public static class ChatOrchestrator
             }
 
             await Console.Error.WriteLineAsync();
-            messages = FinalizeToolCalls(accumulatedToolCalls, messages, contextWindowSize);
+            messages = await FinalizeToolCallsAsync(accumulatedToolCalls, messages, contextWindowSize);
         }
     }
 
@@ -201,7 +201,7 @@ public static class ChatOrchestrator
         return match.Success ? match.Groups[1].Value : null;
     }
 
-    private static List<ChatMessage> FinalizeToolCalls(
+    private static async Task<List<ChatMessage>> FinalizeToolCallsAsync(
         Dictionary<int, ToolCallAccumulator> accumulatedToolCalls,
         List<ChatMessage> messages,
         int contextWindowSize)
@@ -217,7 +217,7 @@ public static class ChatOrchestrator
         var toolResultMessages = new List<ChatMessage>();
         foreach (var toolCall in assistantToolCalls)
         {
-            var result = ResponseHandler.ProcessSingleToolCall(toolCall);
+            var result = await ResponseHandler.ProcessSingleToolCallAsync(toolCall);
             if (result != null)
             {
                 toolResultMessages.Add(result);

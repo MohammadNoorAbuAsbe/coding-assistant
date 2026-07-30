@@ -28,13 +28,13 @@ You are a coding assistant sub-agent working on a specific task delegated by the
 - When done, respond with a concise summary of what you accomplished.
 - Do not ask the user for information you can discover yourself.";
 
-    internal static ToolChatMessage? ProcessTaskCall(ChatToolCall toolCall)
+    internal static async Task<ToolChatMessage?> ProcessTaskCallAsync(ChatToolCall toolCall)
     {
-        return ResponseHandler.ExecuteToolCall<ToolHandler.TaskCall>(
+        return await ResponseHandler.ExecuteToolCallAsync<ToolHandler.TaskCall>(
             toolCall,
             "Expected format: {\"description\": \"<task description>\"}",
             "running sub-agent",
-            args =>
+            async args =>
             {
                 if (string.IsNullOrWhiteSpace(args.description))
                 {
@@ -51,7 +51,7 @@ You are a coding assistant sub-agent working on a specific task delegated by the
                 _depth.Value = depth + 1;
                 try
                 {
-                    return ExecuteSubAgent(args.description, toolCall);
+                    return await ExecuteSubAgentAsync(args.description, toolCall);
                 }
                 finally
                 {
@@ -60,7 +60,7 @@ You are a coding assistant sub-agent working on a specific task delegated by the
             });
     }
 
-    private static ToolChatMessage ExecuteSubAgent(string description, ChatToolCall parentToolCall)
+    private static async Task<ToolChatMessage> ExecuteSubAgentAsync(string description, ChatToolCall parentToolCall)
     {
         var client = ChatService.CreateClient();
         var maxIterations = Configuration.GetMaxIterations();
@@ -75,7 +75,7 @@ You are a coding assistant sub-agent working on a specific task delegated by the
         using (ConsoleStyler.WithColor(ConsoleColor.Cyan))
             Console.Error.WriteLine($"\n[Sub-agent launched]");
 
-        var result = ChatOrchestrator.RunSubAgent(client, messages, maxIterations, contextWindowSize).GetAwaiter().GetResult();
+        var result = await ChatOrchestrator.RunSubAgent(client, messages, maxIterations, contextWindowSize);
 
         using (ConsoleStyler.WithColor(ConsoleColor.Cyan))
             Console.Error.WriteLine($"[Sub-agent finished]");
