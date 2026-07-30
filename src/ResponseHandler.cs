@@ -125,7 +125,9 @@ public static class ResponseHandler
                     return CreateErrorResult(toolCall, "Error: Read tool missing required parameter 'file_path'. Expected format: {\"file_path\": \"<path>\"}");
                 }
 
-                string[] lines = System.IO.File.ReadAllLines(args.file_path);
+                string safePath = PathValidator.ValidatePath(args.file_path, Environment.CurrentDirectory);
+
+                string[] lines = System.IO.File.ReadAllLines(safePath);
                 var sb = new System.Text.StringBuilder();
                 for (int i = 0; i < lines.Length; i++)
                 {
@@ -156,13 +158,15 @@ public static class ResponseHandler
                     return CreateErrorResult(toolCall, "Error: Write tool missing required parameter 'content'.");
                 }
 
-                string? directory = System.IO.Path.GetDirectoryName(args.file_path);
+                string safePath = PathValidator.ValidatePath(args.file_path, Environment.CurrentDirectory);
+
+                string? directory = System.IO.Path.GetDirectoryName(safePath);
                 if (!string.IsNullOrEmpty(directory))
                 {
                     System.IO.Directory.CreateDirectory(directory);
                 }
 
-                System.IO.File.WriteAllText(args.file_path, args.content);
+                System.IO.File.WriteAllText(safePath, args.content);
                 return new ToolChatMessage(toolCall.Id, $"Successfully wrote content to {args.file_path}");
             });
     }
@@ -190,12 +194,14 @@ public static class ResponseHandler
                     return CreateErrorResult(toolCall, "Error: Edit tool missing required parameter 'new_string'.");
                 }
 
-                if (!System.IO.File.Exists(args.file_path))
+                string safePath = PathValidator.ValidatePath(args.file_path, Environment.CurrentDirectory);
+
+                if (!System.IO.File.Exists(safePath))
                 {
                     return CreateErrorResult(toolCall, $"Error: file not found '{args.file_path}'.");
                 }
 
-                string content = System.IO.File.ReadAllText(args.file_path);
+                string content = System.IO.File.ReadAllText(safePath);
 
                 var match = MatchFinder.FindBestMatch(content, args.old_string);
                 if (match == null)
@@ -204,7 +210,7 @@ public static class ResponseHandler
                 }
 
                 string newContent = content.Substring(0, match.Index) + args.new_string + content.Substring(match.Index + match.Length);
-                System.IO.File.WriteAllText(args.file_path, newContent);
+                System.IO.File.WriteAllText(safePath, newContent);
 
                 string note = match.Strategy == MatchStrategy.Exact ? "" : $" (matched using {match.Strategy} comparison)";
                 return new ToolChatMessage(toolCall.Id, $"Successfully edited {args.file_path}{note}.");
@@ -239,12 +245,14 @@ public static class ResponseHandler
                     return CreateErrorResult(toolCall, "Error: EditLine tool missing required parameter 'new_content'.");
                 }
 
-                if (!System.IO.File.Exists(args.file_path))
+                string safePath = PathValidator.ValidatePath(args.file_path, Environment.CurrentDirectory);
+
+                if (!System.IO.File.Exists(safePath))
                 {
                     return CreateErrorResult(toolCall, $"Error: file not found '{args.file_path}'.");
                 }
 
-                string[] lines = System.IO.File.ReadAllLines(args.file_path);
+                string[] lines = System.IO.File.ReadAllLines(safePath);
 
                 if (startLine > lines.Length)
                 {
@@ -257,7 +265,7 @@ public static class ResponseHandler
                 newLines.Add(args.new_content);
                 newLines.AddRange(lines.Skip(endIdx));
 
-                System.IO.File.WriteAllLines(args.file_path, newLines);
+                System.IO.File.WriteAllLines(safePath, newLines);
                 int newTotalLines = newLines.Count;
                 int newContentStart = startLine;
                 int newContentEnd = startLine + args.new_content.Split('\n').Length - 1;
@@ -331,7 +339,11 @@ public static class ResponseHandler
                     return CreateErrorResult(toolCall, "Error: Glob tool missing required parameter 'pattern'.");
                 }
 
-                string result = GlobHelper.FindFiles(args.pattern, args.path);
+                string safePath = args.path != null
+                    ? PathValidator.ValidatePath(args.path, Environment.CurrentDirectory)
+                    : Environment.CurrentDirectory;
+
+                string result = GlobHelper.FindFiles(args.pattern, safePath);
 
                 int maxTokens = Configuration.GetMaxToolResultTokens();
                 result = ContextManager.TruncateToolResult(result, maxTokens);
@@ -359,7 +371,11 @@ public static class ResponseHandler
                     return CreateErrorResult(toolCall, "Error: ripgrep (rg) not found. Install it with: winget install BurntSushi.ripgrep.MSVC");
                 }
 
-                List<string> arguments = RipgrepHelper.BuildRipgrepArguments(args);
+                string safePath = args.path != null
+                    ? PathValidator.ValidatePath(args.path, Environment.CurrentDirectory)
+                    : Environment.CurrentDirectory;
+
+                List<string> arguments = RipgrepHelper.BuildRipgrepArguments(args, safePath);
 
                 var processStartInfo = new ProcessStartInfo
                 {

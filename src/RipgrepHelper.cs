@@ -57,7 +57,7 @@ internal static class RipgrepHelper
         }
     }
 
-    internal static List<string> BuildRipgrepArguments(ToolHandler.GrepCall grepCall)
+    internal static List<string> BuildRipgrepArguments(ToolHandler.GrepCall grepCall, string searchPath)
     {
         var args = new List<string>();
 
@@ -92,11 +92,7 @@ internal static class RipgrepHelper
         }
 
         args.Add(grepCall.pattern);
-
-        if (!string.IsNullOrEmpty(grepCall.path))
-        {
-            args.Add(grepCall.path);
-        }
+        args.Add(searchPath);
 
         return args;
     }
