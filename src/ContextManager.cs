@@ -1,13 +1,38 @@
+using Microsoft.ML.Tokenizers;
 using OpenAI.Chat;
 
 namespace TerminalAiAssistant;
 
 public static class ContextManager
 {
+    private static TiktokenTokenizer? _tokenizer;
+    private static readonly object _lock = new();
+
+    private static TiktokenTokenizer GetTokenizer()
+    {
+        if (_tokenizer == null)
+        {
+            lock (_lock)
+            {
+                if (_tokenizer == null)
+                {
+                    var model = Configuration.GetModel()?.ToLowerInvariant() ?? "";
+                    var encoding = model switch
+                    {
+                        string m when m.Contains("gpt-4o") || m.Contains("o1") || m.Contains("o3") => "o200k_base",
+                        _ => "cl100k_base"
+                    };
+                    _tokenizer = TiktokenTokenizer.CreateForEncoding(encoding);
+                }
+            }
+        }
+        return _tokenizer;
+    }
+
     public static int EstimateTokens(string text)
     {
         if (string.IsNullOrEmpty(text)) return 0;
-        return (text.Length + 3) / 4;
+        return GetTokenizer().CountTokens(text, considerPreTokenization: false, considerNormalization: false);
     }
 
     public static int EstimateMessageTokens(ChatMessage message)
@@ -72,8 +97,11 @@ public static class ContextManager
         int currentTokens = EstimateTokens(content);
         if (currentTokens <= maxTokens) return content;
 
-        int maxChars = maxTokens * 4;
-        return content.Substring(0, maxChars) + "\n\n... [truncated, content exceeded token limit]";
+        int index = GetTokenizer().GetIndexByTokenCount(content, maxTokens, out _, out _,
+            considerPreTokenization: false, considerNormalization: false);
+        if (index >= content.Length) return content;
+
+        return content.Substring(0, Math.Max(0, index)) + "\n\n... [truncated, content exceeded token limit]";
     }
 
     public static string ExtractText(ChatMessageContent content)

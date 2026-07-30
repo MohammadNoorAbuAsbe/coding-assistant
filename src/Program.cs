@@ -32,6 +32,22 @@ else
 
 Configuration.SetModel(model);
 
+var session = new ChatSession();
+
+using var cts = new CancellationTokenSource();
+var cancelPressed = false;
+
+Console.CancelKeyPress += (sender, e) =>
+{
+    if (cancelPressed)
+        return;
+
+    e.Cancel = true;
+    cancelPressed = true;
+    Console.Error.WriteLine("\n[Interrupted] Cancelling...");
+    cts.Cancel();
+};
+
 while (true)
 {
     var prompt = MenuHandler.GetPrompt();
@@ -42,5 +58,14 @@ while (true)
         prompt.Equals("/quit", StringComparison.OrdinalIgnoreCase))
         break;
 
-    await ChatOrchestrator.Run(prompt);
+    if (prompt.Equals("/new", StringComparison.OrdinalIgnoreCase) ||
+        prompt.Equals("/reset", StringComparison.OrdinalIgnoreCase))
+    {
+        session.Reset();
+        using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
+            Console.Error.WriteLine("Session reset.");
+        continue;
+    }
+
+    await ChatOrchestrator.Run(session, prompt, cts.Token);
 }

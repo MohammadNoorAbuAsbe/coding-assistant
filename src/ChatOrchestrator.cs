@@ -4,10 +4,7 @@ namespace TerminalAiAssistant;
 
 public static class ChatOrchestrator
 {
-    private static List<ChatMessage>? _messages;
-    private static bool _sessionStarted;
-
-    public static async Task Run(string prompt)
+    public static async Task Run(ChatSession session, string prompt, CancellationToken cancellationToken = default)
     {
         var client = ChatService.CreateClient();
         var options = ToolHandler.CreateCompletionOptions();
@@ -15,30 +12,33 @@ public static class ChatOrchestrator
         var maxIterations = Configuration.GetMaxIterations();
         var contextWindowSize = Configuration.GetContextWindowSize();
 
-        if (!_sessionStarted)
+        if (!session.SessionStarted)
         {
-            _messages = [new SystemChatMessage(SystemPrompt.GetPrompt(provider))];
+            session.Messages = [new SystemChatMessage(SystemPrompt.GetPrompt(provider))];
             using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
                 await Console.Error.WriteLineAsync($"{provider} · {Configuration.GetModel()} · ctx={contextWindowSize} · max_iter={maxIterations}");
-            _sessionStarted = true;
+            session.SessionStarted = true;
         }
 
-        _messages!.Add(new UserChatMessage(prompt));
-        await RunAgentLoop(client, _messages, options, maxIterations, contextWindowSize);
-        _messages = ContextManager.TruncateMessages(_messages, contextWindowSize);
+        session.Messages.Add(new UserChatMessage(prompt));
+        await RunAgentLoop(client, session.Messages, options, maxIterations, contextWindowSize, cancellationToken);
+        session.Messages = ContextManager.TruncateMessages(session.Messages, contextWindowSize);
     }
 
-    internal static async Task<string> RunSubAgent(ChatClient client, List<ChatMessage> messages, int maxIterations, int contextWindowSize)
+    internal static async Task<string> RunSubAgent(ChatClient client, List<ChatMessage> messages, int maxIterations, int contextWindowSize, CancellationToken cancellationToken = default)
     {
         var options = ToolHandler.CreateSubAgentCompletionOptions();
         string? finalResponse = null;
 
         for (int iteration = 0; iteration < maxIterations; iteration++)
         {
+            if (cancellationToken.IsCancellationRequested)
+                break;
+
             using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
                 await Console.Error.WriteLineAsync($"  [sub-agent {iteration + 1}/{maxIterations}]");
 
-            var (accumulatedToolCalls, responseContent) = await ProcessStreamingUpdates(client, messages, options);
+            var (accumulatedToolCalls, responseContent) = await ProcessStreamingUpdates(client, messages, options, cancellationToken);
 
             if (accumulatedToolCalls.Count == 0)
             {
@@ -52,7 +52,7 @@ public static class ChatOrchestrator
             }
 
             await Console.Error.WriteLineAsync();
-            messages = FinalizeToolCalls(accumulatedToolCalls, messages, contextWindowSize);
+            messages = await FinalizeToolCallsAsync(accumulatedToolCalls, messages, contextWindowSize, cancellationToken);
         }
 
         return finalResponse ?? "Sub-agent completed without producing a text response.";
@@ -63,16 +63,24 @@ public static class ChatOrchestrator
         List<ChatMessage> messages,
         ChatCompletionOptions options,
         int maxIterations,
-        int contextWindowSize)
+        int contextWindowSize,
+        CancellationToken cancellationToken)
     {
         for (int iteration = 0; iteration < maxIterations; iteration++)
         {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
+                    await Console.Error.WriteLineAsync("\n[Cancelled]");
+                break;
+            }
+
             using (ConsoleStyler.WithColor(ConsoleColor.Yellow))
                 await Console.Error.WriteAsync($"[{iteration + 1}/{maxIterations}]");
             using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
                 await Console.Error.WriteLineAsync(" Thinking...");
 
-            var (accumulatedToolCalls, responseContent) = await ProcessStreamingUpdates(client, messages, options);
+            var (accumulatedToolCalls, responseContent) = await ProcessStreamingUpdates(client, messages, options, cancellationToken);
 
             if (accumulatedToolCalls.Count == 0)
             {
@@ -93,19 +101,19 @@ public static class ChatOrchestrator
             }
 
             await Console.Error.WriteLineAsync();
-            messages = FinalizeToolCalls(accumulatedToolCalls, messages, contextWindowSize);
+            messages = await FinalizeToolCallsAsync(accumulatedToolCalls, messages, contextWindowSize, cancellationToken);
         }
     }
 
     private static async Task<(Dictionary<int, ToolCallAccumulator> ToolCalls, string? Content)> ProcessStreamingUpdates(
-        ChatClient client, List<ChatMessage> messages, ChatCompletionOptions options)
+        ChatClient client, List<ChatMessage> messages, ChatCompletionOptions options, CancellationToken cancellationToken)
     {
         var accumulatedToolCalls = new Dictionary<int, ToolCallAccumulator>();
         string? responseContent = null;
 
         try
         {
-            await foreach (var update in ChatService.GetCompletionStreaming(client, messages, options))
+            await foreach (var update in ChatService.GetCompletionStreaming(client, messages, options).WithCancellation(cancellationToken))
             {
                 ProcessContentUpdate(update.ContentUpdate, ref responseContent);
                 ProcessToolCallUpdates(update.ToolCallUpdates, accumulatedToolCalls);
@@ -114,6 +122,11 @@ public static class ChatOrchestrator
         catch (ArgumentOutOfRangeException) when (responseContent == null)
         {
             responseContent = "Error: The API returned an unexpected finish reason (possibly content moderation or a rate limit). Rephrase your request and try again.";
+        }
+        catch (OperationCanceledException)
+        {
+            if (responseContent == null)
+                responseContent = "The operation was cancelled by the user.";
         }
 
         return (accumulatedToolCalls, responseContent);
@@ -204,10 +217,11 @@ public static class ChatOrchestrator
         return match.Success ? match.Groups[1].Value : null;
     }
 
-    private static List<ChatMessage> FinalizeToolCalls(
+    private static async Task<List<ChatMessage>> FinalizeToolCallsAsync(
         Dictionary<int, ToolCallAccumulator> accumulatedToolCalls,
         List<ChatMessage> messages,
-        int contextWindowSize)
+        int contextWindowSize,
+        CancellationToken cancellationToken)
     {
         var assistantToolCalls = accumulatedToolCalls.Values
             .Select(acc => ChatToolCall.CreateFunctionToolCall(acc.Id, acc.FunctionName, BinaryData.FromString(acc.Arguments)))
@@ -220,7 +234,7 @@ public static class ChatOrchestrator
         var toolResultMessages = new List<ChatMessage>();
         foreach (var toolCall in assistantToolCalls)
         {
-            var result = ResponseHandler.ProcessSingleToolCall(toolCall);
+            var result = await ResponseHandler.ProcessSingleToolCallAsync(toolCall, cancellationToken);
             if (result != null)
             {
                 toolResultMessages.Add(result);

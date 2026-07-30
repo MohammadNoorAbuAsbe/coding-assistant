@@ -2,6 +2,7 @@ using OpenAI;
 using OpenAI.Chat;
 using System.ClientModel;
 using System.ClientModel.Primitives;
+using System.Runtime.CompilerServices;
 
 namespace TerminalAiAssistant;
 
@@ -34,9 +35,9 @@ public static class ChatService
         return client.CompleteChat(chatMessages, options);
     }
 
-    public static async IAsyncEnumerable<StreamingChatCompletionUpdate> GetCompletionStreaming(ChatClient client, List<ChatMessage> chatMessages, ChatCompletionOptions options)
+    public static async IAsyncEnumerable<StreamingChatCompletionUpdate> GetCompletionStreaming(ChatClient client, List<ChatMessage> chatMessages, ChatCompletionOptions options, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        await foreach (var update in client.CompleteChatStreamingAsync(chatMessages, options))
+        await foreach (var update in client.CompleteChatStreamingAsync(chatMessages, options, cancellationToken))
         {
             yield return update;
         }
