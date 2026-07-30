@@ -179,6 +179,12 @@ public static class Configuration
         return (int)(GetContextWindowSize() * 0.4);
     }
 
+    public static int GetBashTimeout()
+    {
+        var value = Environment.GetEnvironmentVariable("BASH_TIMEOUT");
+        return int.TryParse(value, out var result) ? result : 120000;
+    }
+
     public static string GetTavilyApiKey()
     {
         return Environment.GetEnvironmentVariable("TAVILY_API_KEY")

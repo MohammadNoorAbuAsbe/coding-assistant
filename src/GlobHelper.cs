@@ -8,9 +8,9 @@ internal static class GlobHelper
 {
     private const int MaxResults = 100;
 
-    internal static string FindFiles(string pattern, string? path)
+    internal static string FindFiles(string pattern, string path)
     {
-        string rootDir = path ?? Environment.CurrentDirectory;
+        string rootDir = path;
 
         if (!Directory.Exists(rootDir))
         {

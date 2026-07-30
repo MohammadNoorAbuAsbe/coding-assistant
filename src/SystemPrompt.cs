@@ -39,7 +39,7 @@ To edit a file, follow this EXACT sequence:
 NEVER call EditLine twice in a row without reading the file in between.";
 
     private const string LocalPrompt = @"
-You are a coding assistant with full access to the project filesystem. You have tools to read, write, search, and execute commands. Use them proactively — do not just describe what you would do, actually do it.
+You are a coding assistant with full access to the current workspace directory. You have tools to read, write, search, and execute commands. Use them proactively — do not just describe what you would do, actually do it.
 
 ## Agent Loop
 
@@ -70,7 +70,7 @@ You should NOT reply: ""I don't have context."" You should:
 Do not ask the user for information you can discover yourself.";
 
     private const string CloudPrompt = @"
-You are a coding assistant with full access to the project filesystem. You have tools to read, write, search, and execute commands. Use them proactively — do not just describe what you would do, actually do it.
+You are a coding assistant with full access to the current workspace directory. You have tools to read, write, search, and execute commands. Use them proactively — do not just describe what you would do, actually do it.
 
 ## Available Tools
 " + ToolDescriptions + @"
