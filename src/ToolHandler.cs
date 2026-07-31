@@ -9,6 +9,8 @@ public static class ToolHandler
     public const string WriteFunctionName = "Write";
     public const string EditFunctionName = "Edit";
     public const string EditLineFunctionName = "EditLine";
+    public const string ApplyPatchFunctionName = "ApplyPatch";
+    public const string DiffFunctionName = "Diff";
     public const string BashFunctionName = "Bash";
     public const string GlobFunctionName = "Glob";
     public const string GrepFunctionName = "Grep";
@@ -22,13 +24,15 @@ public static class ToolHandler
     private const string WriteFunctionDescription = "Write content to a file";
     private const string EditFunctionDescription = "Edit a file by performing an exact string replacement. Use this to make targeted changes instead of rewriting the entire file. Provide the exact old string to find and the new string to replace it with.";
     private const string EditLineFunctionDescription = "Edit a file by replacing lines by line number. Use the Read tool first to see line numbers. Replace lines start_line through end_line (inclusive) with new_content. Use this when you cannot reproduce exact text for the Edit tool.";
+    private const string ApplyPatchFunctionDescription = "Apply a unified diff (patch) to a file, making multiple changes in one call. The patch must contain one or more hunks in the format '@@ -start,count +start,count @@' followed by lines prefixed with ' ' (context), '-' (removed), and '+' (added). File headers (--- / +++) are optional and must not include timestamps. Hunks are located by content with fuzzy tolerance for whitespace differences, so context lines need not match byte-for-byte. To create a new file, the file must not exist and the patch must contain only '+' lines. Use this instead of repeated Edit/EditLine calls when changes span multiple hunks.";
+    private const string DiffFunctionDescription = "Generate a preview of the changes that would be made to a file, WITHOUT writing anything. Compares the current contents of file_path on disk with new_content and returns a unified diff with @@ hunks. Use this to inspect a change before applying it with the ApplyPatch or Edit tools. Returns 'No differences' if the content is identical.";
     private const string BashFunctionDescription = "Execute a shell command";
     private const string GlobFunctionDescription = "Find files by glob pattern. Supports ** (any depth), * (wildcard), ? (single char), and {a,b} (alternation) patterns. Returns full paths of matching files, one per line.";
     private const string GrepFunctionDescription = "Search for patterns in files using ripgrep. Supports regex patterns. Returns matching lines with file paths and line numbers. Respects .gitignore by default, skips binary files.";
     private const string WebFetchFunctionDescription = "Fetch and return the contents of a URL. Converts HTML pages to markdown for readability. Use this to read documentation, check API responses, or fetch web content.";
     private const string WebSearchFunctionDescription = "Search the web for current information using Tavily search. Returns a list of results with titles, URLs, and content snippets. Use this when you need up-to-date information, documentation, or answers not available in the local codebase.";
     private const string QuestionFunctionDescription = "Ask the user a question with multiple-choice options. Use this when you are uncertain about an approach, need a decision, or the task is ambiguous. Present 2-6 clear options with short labels and descriptions. Do not guess when you can ask.";
-    private const string TaskFunctionDescription = "Launch a sub-agent to handle a complex subtask. The sub-agent has access to all the same tools (Read, Write, Edit, EditLine, Bash, Glob, Grep, WebFetch, WebSearch, Question). Use this when a task is complex enough to warrant a dedicated sub-agent — it will run independently and return its result. The sub-agent cannot launch further sub-agents.";
+    private const string TaskFunctionDescription = "Launch a sub-agent to handle a complex subtask. The sub-agent has access to all the same tools (Read, Write, Edit, EditLine, ApplyPatch, Diff, Bash, Glob, Grep, WebFetch, WebSearch, Question, TodoWrite). Use this when a task is complex enough to warrant a dedicated sub-agent — it will run independently and return its result. The sub-agent cannot launch further sub-agents.";
     private const string TodoWriteFunctionDescription = "Create and maintain a structured task list for the current session. Tracks progress, organizes multi-step work. Call this at the START of complex multi-step tasks to plan, and UPDATE it as you complete steps. Each call replaces the entire list — pass ALL items including completed ones.";
     private const string FilePathPropertyName = "file_path";
 
@@ -60,6 +64,18 @@ public static class ToolHandler
                 ("start_line", "First line number to replace (1-indexed, inclusive)"),
                 ("end_line", "Last line number to replace (1-indexed, inclusive)"),
                 ("new_content", "The new content to replace the lines with")));
+
+    public static ChatTool CreateApplyPatchTool() =>
+        CreateTool(ApplyPatchFunctionName, ApplyPatchFunctionDescription, [FilePathPropertyName, "patch"],
+            StringProperties(
+                (FilePathPropertyName, "The path to the file to patch"),
+                ("patch", "The unified diff to apply. One or more hunks in the format '@@ -start,count +start,count @@', followed by lines prefixed with ' ' (context), '-' (removed), and '+' (added). No timestamps after the --- / +++ headers. Include 2-5 context lines per hunk for unique matching.")));
+
+    public static ChatTool CreateDiffTool() =>
+        CreateTool(DiffFunctionName, DiffFunctionDescription, [FilePathPropertyName, "new_content"],
+            StringProperties(
+                (FilePathPropertyName, "The path of the file to compare against (read from disk, not modified)"),
+                ("new_content", "The proposed new content to compare with the current file contents")));
 
     public static ChatTool CreateBashTool() =>
         CreateTool(BashFunctionName, BashFunctionDescription, ["command"],
@@ -157,6 +173,8 @@ public static class ToolHandler
                 CreateWriteTool(),
                 CreateEditTool(),
                 CreateEditLineTool(),
+                CreateApplyPatchTool(),
+                CreateDiffTool(),
                 CreateBashTool(),
                 CreateGlobTool(),
                 CreateGrepTool(),
@@ -179,6 +197,8 @@ public static class ToolHandler
                 CreateWriteTool(),
                 CreateEditTool(),
                 CreateEditLineTool(),
+                CreateApplyPatchTool(),
+                CreateDiffTool(),
                 CreateBashTool(),
                 CreateGlobTool(),
                 CreateGrepTool(),
@@ -240,6 +260,18 @@ public static class ToolHandler
         public required string file_path { get; set; }
         public required string start_line { get; set; }
         public required string end_line { get; set; }
+        public required string new_content { get; set; }
+    }
+
+    public class ApplyPatchCall
+    {
+        public required string file_path { get; set; }
+        public required string patch { get; set; }
+    }
+
+    public class DiffCall
+    {
+        public required string file_path { get; set; }
         public required string new_content { get; set; }
     }
 

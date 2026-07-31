@@ -6,7 +6,7 @@ A terminal-based AI coding assistant that uses LLMs to read, write, edit, search
 
 - **Multi-provider** — Ollama (local), OpenRouter, and OpenAI (cloud)
 - **Interactive menu** — select provider, model, and enter prompts in a loop
-- **12 tools**: Read, Write, Edit (fuzzy match), EditLine (by line number), Bash, Glob, Grep (ripgrep), WebFetch (URLs), WebSearch (Tavily), Question (interactive), Task (sub-agents), TodoWrite (task lists)
+- **14 tools**: Read, Write, Edit (fuzzy match), EditLine (by line number), ApplyPatch (unified diffs, fuzzy), Diff (change previews), Bash, Glob, Grep (ripgrep), WebFetch (URLs), WebSearch (Tavily), Question (interactive), Task (sub-agents), TodoWrite (task lists)
 - **Sub-agents** — delegate complex subtasks to independent sub-agents with their own tool loop
 - **Streaming** — responses appear in real-time as the model generates them
 - **Context window management** — automatic truncation to prevent token overflow
@@ -15,6 +15,8 @@ A terminal-based AI coding assistant that uses LLMs to read, write, edit, search
 - **`config.json`** — customize providers, models, and endpoints
 - **Agent loop** — continues working until the task is done
 - **Fuzzy matching** — Edit tool matches even with whitespace/case differences
+- **Patch apply** — ApplyPatch applies multi-hunk unified diffs with fuzzy whitespace tolerance; can create new files
+- **Diff previews** — Diff tool shows what a change would look like without writing anything
 - **Web search** — Tavily integration for fetching up-to-date web content
 - **Question tool** — asks the user for decisions with multiple-choice options
 - **OpenRouter headers** — sends `HTTP-Referer` and `X-Title` for OpenRouter rankings
@@ -118,7 +120,7 @@ Available built-in providers: `ollama`, `openrouter`, `openai`. Entries in `conf
 
 ## Available Tools
 
-The assistant has 12 tools that it can call autonomously:
+The assistant has 14 tools that it can call autonomously:
 
 | Tool | Description |
 |------|-------------|
@@ -126,6 +128,8 @@ The assistant has 12 tools that it can call autonomously:
 | **Write** | Write content to a file (auto-creates directories) |
 | **Edit** | Edit a file by exact string replacement (with fuzzy fallback) |
 | **EditLine** | Edit by replacing lines by number (requires re-reading between edits) |
+| **ApplyPatch** | Apply a unified diff (patch) to a file — multiple hunks in one call, matched with fuzzy whitespace tolerance; can create new files from all-additions patches |
+| **Diff** | Preview the changes that would be made to a file without writing anything (file vs new content) |
 | **Bash** | Execute a shell command |
 | **Glob** | Find files by glob pattern (`**`, `*`, `?`, `{a,b}`) |
 | **Grep** | Search file contents with ripgrep (regex, supports include/exclude/case-insensitive) |
@@ -148,6 +152,7 @@ src/
 ├── ContextManager.cs     # Token estimation and message truncation
 ├── GlobHelper.cs         # File globbing via Microsoft.Extensions.FileSystemGlobbing
 ├── MatchFinder.cs        # Fuzzy text matching for the Edit tool
+├── PatchHandler.cs       # ApplyPatch (unified diff application) and Diff (change preview) tools
 ├── PathValidator.cs      # Validates and sanitizes file paths
 ├── AnsiRenderer.cs       # Renders markdown to ANSI colors for console output
 ├── ConsoleStyler.cs      # Helper for styling console output
@@ -205,6 +210,8 @@ The assistant can autonomously use tools like:
 - **Read a file**: `Read` tool with `file_path: "src/Program.cs"`
 - **Write a new file**: `Write` tool with `file_path: "src/NewFeature.cs"` and content
 - **Edit existing code**: `EditLine` tool to replace specific lines
+- **Apply a patch**: `ApplyPatch` tool with `{"file_path": "src/Foo.cs", "patch": "@@ -10,3 +10,3 @@ ..."}`
+- **Preview a change**: `Diff` tool with `{"file_path": "src/Foo.cs", "new_content": "..."}` to see the diff before applying
 - **Search code**: `Grep` tool to find patterns across files
 - **Run commands**: `Bash` tool to execute `dotnet build` or run tests
 - **Search the web**: `WebSearch` tool for up-to-date information
