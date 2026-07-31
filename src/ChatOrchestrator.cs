@@ -90,7 +90,7 @@ public static class ChatOrchestrator
                 {
                     Console.WriteLine();
 
-                    if (LooksLikeSkippedEdit(responseContent) && iteration < maxIterations - 1)
+                    if (LooksLikeSkippedEdit(responseContent) && iteration < maxIterations - 1 && !UserRequestedPreviewOnly(messages))
                     {
                         messages.Add(new AssistantChatMessage(responseContent));
                         messages.Add(new UserChatMessage("You described the code changes above but did not apply them. Execute the necessary Edit or EditLine tool calls now to actually make these changes to the files. Do not repeat the descriptions — just apply them."));
@@ -346,6 +346,29 @@ public static class ChatOrchestrator
             response.Contains(".json");
 
         return mentionsSourceFile;
+    }
+
+    private static bool UserRequestedPreviewOnly(List<ChatMessage> messages)
+    {
+        var lastUser = messages.LastOrDefault(m => m is UserChatMessage);
+        if (lastUser is not UserChatMessage userMsg) return false;
+
+        string text = ContextManager.ExtractText(userMsg.Content);
+        return text.Contains("do not apply", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("don't apply", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("do not modify", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("don't modify", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("do not edit", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("don't edit", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("do not change", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("don't change", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("without writing", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("without modifying", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("without changing", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("dry run", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("plan only", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("preview", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("just show", StringComparison.OrdinalIgnoreCase);
     }
 }
 

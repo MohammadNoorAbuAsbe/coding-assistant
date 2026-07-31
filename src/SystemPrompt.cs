@@ -39,7 +39,9 @@ public static class SystemPrompt
     private const string ApplyEditsSection = @"
 ## CRITICAL: You MUST apply edits, not describe them
 
-When you change a file, you MUST use the Edit or EditLine tool to make the actual change. Never output code blocks showing what you would change without also calling the tool to apply it. If you describe a change without applying it, you will be prompted to redo it with actual tool calls.";
+When you change a file, you MUST use the Edit, EditLine, or ApplyPatch tool to make the actual change. Never output code blocks showing what you would change without also calling the tool to apply it. If you describe a change without applying it, you will be prompted to redo it with actual tool calls.
+
+EXCEPTION: If the user explicitly asked for a preview, plan, or explanation only (e.g., ""show me the diff"", ""do not apply"", ""preview this change"", ""dry run""), do NOT modify any files — just show the requested output.";
 
     private const string AskUserSection = @"
 ## When to Ask the User
