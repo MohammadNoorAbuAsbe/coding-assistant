@@ -49,7 +49,6 @@ public static class ResponseHandler
             ToolHandler.ReadFunctionName => Task.FromResult<ToolChatMessage?>(ProcessReadFileCall(toolCall)),
             ToolHandler.WriteFunctionName => Task.FromResult<ToolChatMessage?>(ProcessWriteFileCall(toolCall)),
             ToolHandler.EditFunctionName => Task.FromResult<ToolChatMessage?>(ProcessEditFileCall(toolCall)),
-            ToolHandler.EditLineFunctionName => Task.FromResult<ToolChatMessage?>(ProcessEditLineCall(toolCall)),
             ToolHandler.ApplyPatchFunctionName => PatchHandler.ProcessApplyPatchCallAsync(toolCall, cancellationToken),
             ToolHandler.DiffFunctionName => PatchHandler.ProcessDiffCallAsync(toolCall, cancellationToken),
             ToolHandler.BashFunctionName => ProcessBashCallAsync(toolCall, cancellationToken),
@@ -60,7 +59,7 @@ public static class ResponseHandler
             ToolHandler.QuestionFunctionName => Task.FromResult<ToolChatMessage?>(QuestionHandler.ProcessQuestionCall(toolCall)),
             ToolHandler.TaskFunctionName => TaskHandler.ProcessTaskCallAsync(toolCall, cancellationToken),
             ToolHandler.TodoWriteFunctionName => Task.FromResult<ToolChatMessage?>(TodoWriteHandler.ProcessTodoWriteCall(toolCall)),
-            _ => Task.FromResult<ToolChatMessage?>(CreateErrorResult(toolCall, $"Error: unknown function '{toolCall.FunctionName}'. Available functions: {ToolHandler.ReadFunctionName}, {ToolHandler.WriteFunctionName}, {ToolHandler.EditFunctionName}, {ToolHandler.EditLineFunctionName}, {ToolHandler.ApplyPatchFunctionName}, {ToolHandler.DiffFunctionName}, {ToolHandler.BashFunctionName}, {ToolHandler.GlobFunctionName}, {ToolHandler.GrepFunctionName}, {ToolHandler.WebFetchFunctionName}, {ToolHandler.WebSearchFunctionName}, {ToolHandler.QuestionFunctionName}, {ToolHandler.TaskFunctionName}, {ToolHandler.TodoWriteFunctionName}."))
+            _ => Task.FromResult<ToolChatMessage?>(CreateErrorResult(toolCall, $"Error: unknown function '{toolCall.FunctionName}'. Available functions: {ToolHandler.ReadFunctionName}, {ToolHandler.WriteFunctionName}, {ToolHandler.EditFunctionName}, {ToolHandler.ApplyPatchFunctionName}, {ToolHandler.DiffFunctionName}, {ToolHandler.BashFunctionName}, {ToolHandler.GlobFunctionName}, {ToolHandler.GrepFunctionName}, {ToolHandler.WebFetchFunctionName}, {ToolHandler.WebSearchFunctionName}, {ToolHandler.QuestionFunctionName}, {ToolHandler.TaskFunctionName}, {ToolHandler.TodoWriteFunctionName}."))
         };
         return await task;
     }
@@ -231,7 +230,7 @@ public static class ResponseHandler
                 var match = MatchFinder.FindBestMatch(content, args.old_string);
                 if (match == null)
                 {
-                    return CreateErrorResult(toolCall, $"Error: Edit tool could not find the specified 'old_string' in '{args.file_path}'. Use the EditLine tool instead - Read the file first to see line numbers, then use EditLine with start_line and end_line.");
+                    return CreateErrorResult(toolCall, $"Error: Edit tool could not find the specified 'old_string' in '{args.file_path}'. Use the ApplyPatch tool instead — Read the file first, then submit a patch with correct context lines.");
                 }
 
                 string newContent = content.Substring(0, match.Index) + args.new_string + content.Substring(match.Index + match.Length);
@@ -239,62 +238,6 @@ public static class ResponseHandler
 
                 string note = match.Strategy == MatchStrategy.Exact ? "" : $" (matched using {match.Strategy} comparison)";
                 return new ToolChatMessage(toolCall.Id, $"Successfully edited {args.file_path}{note}.");
-            });
-    }
-
-    private static ToolChatMessage? ProcessEditLineCall(ChatToolCall toolCall)
-    {
-        return ExecuteToolCall<ToolHandler.EditLineCall>(
-            toolCall,
-            "Expected format: {\"file_path\": \"<path>\", \"start_line\": \"<number>\", \"end_line\": \"<number>\", \"new_content\": \"<text>\"}",
-            "editing file",
-            args =>
-            {
-                if (args.file_path == null)
-                {
-                    return CreateErrorResult(toolCall, "Error: EditLine tool missing required parameter 'file_path'.");
-                }
-
-                if (!int.TryParse(args.start_line, out int startLine) || startLine < 1)
-                {
-                    return CreateErrorResult(toolCall, "Error: EditLine tool 'start_line' must be a positive integer.");
-                }
-
-                if (!int.TryParse(args.end_line, out int endLine) || endLine < startLine)
-                {
-                    return CreateErrorResult(toolCall, "Error: EditLine tool 'end_line' must be >= start_line.");
-                }
-
-                if (args.new_content == null)
-                {
-                    return CreateErrorResult(toolCall, "Error: EditLine tool missing required parameter 'new_content'.");
-                }
-
-                string safePath = PathValidator.ValidatePath(args.file_path, Environment.CurrentDirectory);
-
-                if (!System.IO.File.Exists(safePath))
-                {
-                    return CreateErrorResult(toolCall, $"Error: file not found '{args.file_path}'.");
-                }
-
-                string[] lines = System.IO.File.ReadAllLines(safePath);
-
-                if (startLine > lines.Length)
-                {
-                    return CreateErrorResult(toolCall, $"Error: start_line {startLine} exceeds file length ({lines.Length} lines).");
-                }
-
-                int endIdx = Math.Min(endLine, lines.Length);
-                var newLines = new List<string>();
-                newLines.AddRange(lines.Take(startLine - 1));
-                newLines.Add(args.new_content);
-                newLines.AddRange(lines.Skip(endIdx));
-
-                System.IO.File.WriteAllLines(safePath, newLines);
-                int newTotalLines = newLines.Count;
-                int newContentStart = startLine;
-                int newContentEnd = startLine + args.new_content.Split('\n').Length - 1;
-                return new ToolChatMessage(toolCall.Id, $"Successfully edited {args.file_path} (replaced lines {startLine}-{endLine} with {newContentStart}-{newContentEnd}). File now has {newTotalLines} lines. ALWAYS re-read the file before your next edit to get fresh line numbers.");
             });
     }
 

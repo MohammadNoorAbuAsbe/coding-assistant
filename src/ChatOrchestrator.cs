@@ -93,7 +93,7 @@ public static class ChatOrchestrator
                     if (LooksLikeSkippedEdit(responseContent) && iteration < maxIterations - 1 && !UserRequestedPreviewOnly(messages))
                     {
                         messages.Add(new AssistantChatMessage(responseContent));
-                        messages.Add(new UserChatMessage("You described the code changes above but did not apply them. Execute the necessary Edit or EditLine tool calls now to actually make these changes to the files. Do not repeat the descriptions — just apply them."));
+                        messages.Add(new UserChatMessage("You described the code changes above but did not apply them. Execute the necessary Edit or ApplyPatch tool calls now to actually make these changes to the files. Do not repeat the descriptions — just apply them."));
                         continue;
                     }
 

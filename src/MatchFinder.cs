@@ -136,7 +136,7 @@ internal static class MatchFinder
                 lastWasSpace = false;
             }
         }
-        return sb.ToString().TrimEnd();
+        return sb.ToString().Trim();
     }
 
     private static string StripLine(string line)

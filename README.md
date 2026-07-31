@@ -6,7 +6,7 @@ A terminal-based AI coding assistant that uses LLMs to read, write, edit, search
 
 - **Multi-provider** — Ollama (local), OpenRouter, and OpenAI (cloud)
 - **Interactive menu** — select provider, model, and enter prompts in a loop
-- **14 tools**: Read, Write, Edit (fuzzy match), EditLine (by line number), ApplyPatch (unified diffs, fuzzy), Diff (change previews), Bash, Glob, Grep (ripgrep), WebFetch (URLs), WebSearch (Tavily), Question (interactive), Task (sub-agents), TodoWrite (task lists)
+- **13 tools**: Read, Write, Edit (fuzzy match), ApplyPatch (unified diffs, fuzzy), Diff (change previews), Bash, Glob, Grep (ripgrep), WebFetch (URLs), WebSearch (Tavily), Question (interactive), Task (sub-agents), TodoWrite (task lists)
 - **Sub-agents** — delegate complex subtasks to independent sub-agents with their own tool loop
 - **Streaming** — responses appear in real-time as the model generates them
 - **Context window management** — automatic truncation to prevent token overflow
@@ -120,14 +120,13 @@ Available built-in providers: `ollama`, `openrouter`, `openai`. Entries in `conf
 
 ## Available Tools
 
-The assistant has 14 tools that it can call autonomously:
+The assistant has 13 tools that it can call autonomously:
 
 | Tool | Description |
 |------|-------------|
 | **Read** | Read a file (returns content with line numbers) |
 | **Write** | Write content to a file (auto-creates directories) |
-| **Edit** | Edit a file by exact string replacement (with fuzzy fallback) |
-| **EditLine** | Edit by replacing lines by number (requires re-reading between edits) |
+| **Edit** | Edit a file by string replacement (fuzzy tolerance for whitespace/case differences) |
 | **ApplyPatch** | Apply a unified diff (patch) to a file — multiple hunks in one call, matched with fuzzy whitespace tolerance; can create new files from all-additions patches |
 | **Diff** | Preview the changes that would be made to a file without writing anything (file vs new content) |
 | **Bash** | Execute a shell command |
@@ -159,7 +158,7 @@ src/
 ├── MenuHandler.cs        # Interactive provider/model selection, Ollama discovery
 ├── QuestionHandler.cs    # Interactive Question tool implementation
 ├── ProviderConfig.cs     # Provider configuration model
-├── ResponseHandler.cs    # Tool call execution (Read, Write, Edit, EditLine, Bash, Glob, Grep)
+├── ResponseHandler.cs    # Tool call execution (Read, Write, Edit, Bash, Glob, Grep)
 ├── RipgrepHelper.cs      # ripgrep argument builder and path finder
 ├── SystemPrompt.cs       # System prompts (local vs cloud variants)
 ├── TavilyModels.cs       # Tavily search response models
@@ -209,7 +208,7 @@ The assistant can autonomously use tools like:
 
 - **Read a file**: `Read` tool with `file_path: "src/Program.cs"`
 - **Write a new file**: `Write` tool with `file_path: "src/NewFeature.cs"` and content
-- **Edit existing code**: `EditLine` tool to replace specific lines
+- **Edit existing code**: `Edit` tool for targeted string replacements
 - **Apply a patch**: `ApplyPatch` tool with `{"file_path": "src/Foo.cs", "patch": "@@ -10,3 +10,3 @@ ..."}`
 - **Preview a change**: `Diff` tool with `{"file_path": "src/Foo.cs", "new_content": "..."}` to see the diff before applying
 - **Search code**: `Grep` tool to find patterns across files

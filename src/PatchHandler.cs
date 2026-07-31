@@ -194,7 +194,7 @@ internal static partial class PatchHandler
         if (best.Count == 1)
             return best[0];
 
-        ambiguity = $"the context matched at multiple locations (lines {string.Join(", ", best.Select(b => b + 1))}). Include more unique context lines or use the Edit/EditLine tools instead.";
+        ambiguity = $"the context matched at multiple locations (lines {string.Join(", ", best.Select(b => b + 1))}). Include more unique context lines or use the Edit tool instead.";
         return null;
     }
 
@@ -448,7 +448,7 @@ internal static partial class PatchHandler
                 lastWasSpace = false;
             }
         }
-        return sb.ToString().TrimEnd();
+        return sb.ToString().Trim();
     }
 
     private static string StripLine(string line) =>
