@@ -1,3 +1,4 @@
+using System.ClientModel;
 using System.Text;
 using OpenAI.Chat;
 
@@ -125,6 +126,10 @@ public static class ChatOrchestrator
         catch (ArgumentOutOfRangeException) when (responseContent == null)
         {
             responseContent = "Error: The API returned an unexpected finish reason (possibly content moderation or a rate limit). Rephrase your request and try again.";
+        }
+        catch (ClientResultException ex) when (responseContent == null)
+        {
+            responseContent = FormatApiError(ex);
         }
         catch (OperationCanceledException)
         {
@@ -307,6 +312,26 @@ public static class ChatOrchestrator
         if (string.IsNullOrEmpty(text)) return text;
         if (text.Length <= maxLen) return text;
         return text[..maxLen] + "…";
+    }
+
+    private static string FormatApiError(ClientResultException ex)
+    {
+        string detail = "";
+        try
+        {
+            var raw = ex.GetRawResponse();
+            if (raw?.Content != null)
+            {
+                string body = raw.Content.ToString();
+                if (body.Length > 0)
+                    detail = $" Details: {TruncateForDisplay(body, 400)}";
+            }
+        }
+        catch
+        {
+        }
+
+        return $"Error: The API request failed with HTTP {ex.Status} (Bad Request).{detail} This is often caused by the model rejecting the message history, tool calls, or content policy. Simplify your approach, retry without tools, or switch to a different model.";
     }
 
     private static bool LooksLikeSkippedEdit(string response)
