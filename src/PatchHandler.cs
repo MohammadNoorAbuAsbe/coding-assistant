@@ -98,7 +98,7 @@ internal static partial class PatchHandler
         var matchLines = originalLines.Select(TrimCR).ToList();
         bool fileEndsWithNewline = raw.EndsWith("\n");
 
-        var placements = new List<Placement>();
+        var placements = new List<(Hunk Hunk, int Index, bool Fuzzy, bool ReachesEnd)>();
         int noOps = 0;
         for (int i = 0; i < hunks.Count; i++)
         {
@@ -110,7 +110,7 @@ internal static partial class PatchHandler
                 continue;
             }
 
-            int? matchIndex = FindHunkMatch(hunk, matchLines, out bool fuzzy, out bool fallback, out string? ambiguity);
+            int? matchIndex = FindHunkMatch(hunk, matchLines, out bool fuzzy, out string? ambiguity);
             if (ambiguity != null)
             {
                 return ResponseHandler.CreateErrorResult(toolCall, $"Error: could not apply hunk {i + 1} to '{displayPath}': {ambiguity}");
@@ -121,10 +121,8 @@ internal static partial class PatchHandler
                 return ResponseHandler.CreateErrorResult(toolCall, $"Error: could not apply hunk {i + 1} to '{displayPath}' — the changed lines were not found (declared around line {Math.Max(hunk.OldStart, 1)}). The file may have changed or the context lines do not match. Read the file to get the current content and retry with corrected context lines.");
             }
 
-            bool reachesEnd = fallback
-                ? matchIndex + hunk.RemovedCount >= matchLines.Count
-                : matchIndex + hunk.SearchBlockCount >= matchLines.Count;
-            placements.Add(new Placement(hunk, matchIndex.Value, fuzzy, fallback, reachesEnd));
+            bool reachesEnd = matchIndex + hunk.SearchBlockCount >= matchLines.Count;
+            placements.Add((hunk, matchIndex.Value, fuzzy, reachesEnd));
         }
 
         if (placements.Count == 0)
@@ -135,9 +133,9 @@ internal static partial class PatchHandler
             return new ToolChatMessage(toolCall.Id, $"Successfully applied the patch to {displayPath} ({note}).");
         }
 
-        foreach (var p in placements.OrderByDescending(p => p.Index))
+        foreach (var (hunk, index, _, _) in placements.OrderByDescending(p => p.Index))
         {
-            ApplyHunkToLines(originalLines, p.Hunk, p.Index, p.Fallback);
+            ApplyHunkToLines(originalLines, hunk, index);
         }
 
         bool trailingNewline = fileEndsWithNewline;
@@ -160,18 +158,14 @@ internal static partial class PatchHandler
         string fuzzyNote = placements.Any(p => p.Fuzzy)
             ? " (some hunks matched with fuzzy whitespace comparison)"
             : "";
-        string fallbackNote = placements.Any(p => p.Fallback)
-            ? " (some hunks were located by their changed lines; mismatched context lines were ignored)"
-            : "";
         string noOpNote = noOps > 0 ? $" ({noOps} context-only no-op hunk(s) skipped)" : "";
-        return new ToolChatMessage(toolCall.Id, $"Successfully applied {placements.Count} hunk(s) to {displayPath} (+{totalAdded} -{totalRemoved} lines){fuzzyNote}{fallbackNote}{noOpNote}.");
+        return new ToolChatMessage(toolCall.Id, $"Successfully applied {placements.Count} hunk(s) to {displayPath} (+{totalAdded} -{totalRemoved} lines){fuzzyNote}{noOpNote}.");
     }
 
-    private static int? FindHunkMatch(Hunk hunk, List<string> matchLines, out bool fuzzy, out bool fallback, out string? ambiguity)
+    private static int? FindHunkMatch(Hunk hunk, List<string> matchLines, out bool fuzzy, out string? ambiguity)
     {
         ambiguity = null;
         fuzzy = false;
-        fallback = false;
 
         var searchBlock = hunk.Lines
             .Where(e => e.Type != '+')
@@ -204,37 +198,6 @@ internal static partial class PatchHandler
             return ResolveCandidates(stripped, declaredIndex, ref ambiguity, ref fuzzy);
         }
 
-        var removedBlock = hunk.Lines
-            .Where(e => e.Type == '-')
-            .Select(e => e.Text)
-            .ToList();
-
-        if (removedBlock.Count == 0)
-            return null;
-
-        var removedExact = FindLineSequence(matchLines, removedBlock, ExactCompare);
-        if (removedExact.Count > 0)
-        {
-            fallback = true;
-            return ResolveCandidates(removedExact, declaredIndex, ref ambiguity, ref fuzzy);
-        }
-
-        var removedNormalized = FindLineSequence(matchLines, removedBlock, NormalizedCompare);
-        if (removedNormalized.Count > 0)
-        {
-            fallback = true;
-            fuzzy = true;
-            return ResolveCandidates(removedNormalized, declaredIndex, ref ambiguity, ref fuzzy);
-        }
-
-        var removedStripped = FindLineSequence(matchLines, removedBlock, StrippedCompare);
-        if (removedStripped.Count > 0)
-        {
-            fallback = true;
-            fuzzy = true;
-            return ResolveCandidates(removedStripped, declaredIndex, ref ambiguity, ref fuzzy);
-        }
-
         return null;
     }
 
@@ -252,17 +215,8 @@ internal static partial class PatchHandler
         return null;
     }
 
-    private static void ApplyHunkToLines(List<string> originalLines, Hunk hunk, int matchIndex, bool fallback)
+    private static void ApplyHunkToLines(List<string> originalLines, Hunk hunk, int matchIndex)
     {
-        if (fallback)
-        {
-            var removedTexts = hunk.Lines.Where(e => e.Type == '-').Select(e => e.Text).ToList();
-            var addedTexts = hunk.Lines.Where(e => e.Type == '+').Select(e => e.Text).ToList();
-            originalLines.RemoveRange(matchIndex, removedTexts.Count);
-            originalLines.InsertRange(matchIndex, addedTexts);
-            return;
-        }
-
         var result = new List<string>();
         int contextCursor = matchIndex;
         foreach (var entry in hunk.Lines)
@@ -639,8 +593,6 @@ internal static partial class PatchHandler
     }
 
     private sealed record PatchLine(char Type, string Text);
-
-    private sealed record Placement(Hunk Hunk, int Index, bool Fuzzy, bool Fallback, bool ReachesEnd);
 
     private sealed record DiffChange(char Type, string Text);
 
