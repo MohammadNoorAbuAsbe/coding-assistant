@@ -98,7 +98,7 @@ internal static partial class PatchHandler
         var matchLines = originalLines.Select(TrimCR).ToList();
         bool fileEndsWithNewline = raw.EndsWith("\n");
 
-        var placements = new List<(Hunk Hunk, int Index, bool Fuzzy, bool ReachesEnd)>();
+        var placements = new List<(int HunkNumber, Hunk Hunk, int Index, MatchStrategy Strategy, bool ReachesEnd)>();
         int noOps = 0;
         for (int i = 0; i < hunks.Count; i++)
         {
@@ -110,7 +110,7 @@ internal static partial class PatchHandler
                 continue;
             }
 
-            int? matchIndex = FindHunkMatch(hunk, matchLines, out bool fuzzy, out string? ambiguity);
+            int? matchIndex = FindHunkMatch(hunk, matchLines, out MatchStrategy strategy, out string? ambiguity);
             if (ambiguity != null)
             {
                 return ResponseHandler.CreateErrorResult(toolCall, $"Error: could not apply hunk {i + 1} to '{displayPath}': {ambiguity}");
@@ -122,7 +122,7 @@ internal static partial class PatchHandler
             }
 
             bool reachesEnd = matchIndex + hunk.SearchBlockCount >= matchLines.Count;
-            placements.Add((hunk, matchIndex.Value, fuzzy, reachesEnd));
+            placements.Add((i + 1, hunk, matchIndex.Value, strategy, reachesEnd));
         }
 
         if (placements.Count == 0)
@@ -133,7 +133,7 @@ internal static partial class PatchHandler
             return new ToolChatMessage(toolCall.Id, $"Successfully applied the patch to {displayPath} ({note}).");
         }
 
-        foreach (var (hunk, index, _, _) in placements.OrderByDescending(p => p.Index))
+        foreach (var (_, hunk, index, _, _) in placements.OrderByDescending(p => p.Index))
         {
             ApplyHunkToLines(originalLines, hunk, index);
         }
@@ -155,17 +155,51 @@ internal static partial class PatchHandler
 
         int totalAdded = placements.Sum(p => p.Hunk.AddedCount);
         int totalRemoved = placements.Sum(p => p.Hunk.RemovedCount);
-        string fuzzyNote = placements.Any(p => p.Fuzzy)
-            ? " (some hunks matched with fuzzy whitespace comparison)"
-            : "";
-        string noOpNote = noOps > 0 ? $" ({noOps} context-only no-op hunk(s) skipped)" : "";
-        return new ToolChatMessage(toolCall.Id, $"Successfully applied {placements.Count} hunk(s) to {displayPath} (+{totalAdded} -{totalRemoved} lines){fuzzyNote}{noOpNote}.");
+
+        string? diff;
+        try
+        {
+            diff = GenerateUnifiedDiff(raw, content, displayPath);
+        }
+        catch (InvalidOperationException)
+        {
+            diff = null;
+        }
+
+        var sb = new StringBuilder();
+        sb.Append($"Successfully applied {placements.Count} hunk(s) to {displayPath} (+{totalAdded} -{totalRemoved} lines).");
+        foreach (var (num, hunk, _, strategy, _) in placements)
+        {
+            sb.Append($"\n  hunk {num}: {DescribeHunkMatch(hunk, strategy)}");
+        }
+        if (noOps > 0)
+        {
+            sb.Append($"\n  {noOps} context-only no-op hunk(s) skipped.");
+        }
+        if (!string.IsNullOrEmpty(diff))
+        {
+            sb.Append("\n\n").Append(diff);
+        }
+        return new ToolChatMessage(toolCall.Id, ContextManager.TruncateToolResult(sb.ToString(), Configuration.GetMaxToolResultTokens()));
     }
 
-    private static int? FindHunkMatch(Hunk hunk, List<string> matchLines, out bool fuzzy, out string? ambiguity)
+    private static string DescribeHunkMatch(Hunk hunk, MatchStrategy strategy)
+    {
+        if (hunk.SearchBlockCount == 0)
+            return "matched at declared position";
+        return strategy switch
+        {
+            MatchStrategy.Exact => "matched exactly",
+            MatchStrategy.NormalizedWhitespace => "matched fuzzily (whitespace)",
+            MatchStrategy.UnicodeNormalized => "matched fuzzily (unicode)",
+            _ => "matched"
+        };
+    }
+
+    private static int? FindHunkMatch(Hunk hunk, List<string> matchLines, out MatchStrategy strategy, out string? ambiguity)
     {
         ambiguity = null;
-        fuzzy = false;
+        strategy = MatchStrategy.Exact;
 
         var searchBlock = hunk.Lines
             .Where(e => e.Type != '+')
@@ -182,26 +216,26 @@ internal static partial class PatchHandler
 
         var exact = FindLineSequence(matchLines, searchBlock, ExactCompare);
         if (exact.Count > 0)
-            return ResolveCandidates(exact, declaredIndex, ref ambiguity, ref fuzzy);
+            return ResolveCandidates(exact, declaredIndex, ref ambiguity);
 
         var normalized = FindLineSequence(matchLines, searchBlock, NormalizedCompare);
         if (normalized.Count > 0)
         {
-            fuzzy = true;
-            return ResolveCandidates(normalized, declaredIndex, ref ambiguity, ref fuzzy);
+            strategy = MatchStrategy.NormalizedWhitespace;
+            return ResolveCandidates(normalized, declaredIndex, ref ambiguity);
         }
 
         var unicode = FindLineSequence(matchLines, searchBlock, UnicodeNormalizedCompare);
         if (unicode.Count > 0)
         {
-            fuzzy = true;
-            return ResolveCandidates(unicode, declaredIndex, ref ambiguity, ref fuzzy);
+            strategy = MatchStrategy.UnicodeNormalized;
+            return ResolveCandidates(unicode, declaredIndex, ref ambiguity);
         }
 
         return null;
     }
 
-    private static int? ResolveCandidates(List<int> candidates, int declaredIndex, ref string? ambiguity, ref bool fuzzy)
+    private static int? ResolveCandidates(List<int> candidates, int declaredIndex, ref string? ambiguity)
     {
         if (candidates.Count == 1)
             return candidates[0];

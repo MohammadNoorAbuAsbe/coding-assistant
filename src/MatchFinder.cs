@@ -4,13 +4,19 @@ internal enum MatchStrategy
 {
     Exact,
     NormalizedWhitespace,
-    UnicodeNormalized
+    UnicodeNormalized,
+    LineLcs
 }
 
-internal sealed record MatchResult(int Index, int Length, MatchStrategy Strategy);
+internal sealed record MatchResult(int Index, int Length, MatchStrategy Strategy, double? Confidence = null);
 
 internal static class MatchFinder
 {
+    private const int MaxLcsCells = 4_000_000;
+    private const int MaxLcsPatternLines = 512;
+    private const int MaxLcsSkipLines = 8;
+    private const double MinLcsConfidence = 0.7;
+
     internal static MatchResult? FindBestMatch(string content, string oldString)
     {
         if (string.IsNullOrEmpty(oldString)) return null;
@@ -22,6 +28,9 @@ internal static class MatchFinder
         if (result != null) return result;
 
         result = TryMatchLineUnicode(content, oldString);
+        if (result != null) return result;
+
+        result = TryMatchLineLcs(content, oldString);
         if (result != null) return result;
 
         return null;
@@ -41,6 +50,80 @@ internal static class MatchFinder
 
     private static MatchResult? TryMatchLineUnicode(string content, string oldString) =>
         TryMatchLineNormalizedCore(content, oldString, UnicodeNormalizeLine, MatchStrategy.UnicodeNormalized);
+
+    private static MatchResult? TryMatchLineLcs(string content, string oldString)
+    {
+        var (contentLines, lineOffsets) = SplitIntoLines(content);
+        var oldLines = SplitIntoLines(oldString).Lines;
+        if (oldLines.Length == 0 || oldLines.Length > MaxLcsPatternLines) return null;
+        if ((long)contentLines.Length * oldLines.Length > MaxLcsCells) return null;
+
+        var contentNorm = contentLines.Select(UnicodeNormalizeLine).ToArray();
+        var oldNorm = oldLines.Select(UnicodeNormalizeLine).ToArray();
+
+        var index = new Dictionary<string, List<int>>();
+        for (int i = 0; i < contentNorm.Length; i++)
+        {
+            if (!index.TryGetValue(contentNorm[i], out var list))
+            {
+                list = new List<int>();
+                index[contentNorm[i]] = list;
+            }
+            list.Add(i);
+        }
+
+        int? bestStart = null;
+        int? bestEndLine = null;
+        int bestMatched = -1;
+        bool ambiguous = false;
+
+        for (int s = 0; s < contentNorm.Length; s++)
+        {
+            int cursor = s;
+            int matched = 0;
+            int endLine = -1;
+
+            foreach (string pattern in oldNorm)
+            {
+                if (!index.TryGetValue(pattern, out var list)) continue;
+                int idx = list.BinarySearch(cursor);
+                if (idx < 0) idx = ~idx;
+                if (idx >= list.Count) continue;
+                cursor = list[idx] + 1;
+                matched++;
+                endLine = list[idx];
+            }
+
+            if (matched == 0 || endLine - s > oldLines.Length + MaxLcsSkipLines) continue;
+            if ((double)matched / oldLines.Length < MinLcsConfidence) continue;
+
+            if (matched > bestMatched)
+            {
+                bestMatched = matched;
+                bestStart = s;
+                bestEndLine = endLine;
+                ambiguous = false;
+            }
+            else if (matched == bestMatched)
+            {
+                ambiguous = true;
+            }
+        }
+
+        if (ambiguous || bestStart == null || bestEndLine == null) return null;
+
+        double confidence = (double)bestMatched / oldLines.Length;
+        return BuildLineLcsResult(content, contentLines, lineOffsets, bestStart.Value, bestEndLine.Value, confidence);
+    }
+
+    private static MatchResult? BuildLineLcsResult(string content, string[] contentLines, int[] lineOffsets, int startLine, int endLine, double confidence)
+    {
+        int startOffset = lineOffsets[startLine];
+        int endOffset = lineOffsets[endLine] + contentLines[endLine].Length;
+        int length = endOffset - startOffset;
+        if (startOffset + length > content.Length) return null;
+        return new MatchResult(startOffset, length, MatchStrategy.LineLcs, confidence);
+    }
 
     private static MatchResult? TryMatchLineNormalizedCore(string content, string oldString, Func<string, string> normalize, MatchStrategy strategy)
     {

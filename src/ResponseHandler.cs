@@ -236,8 +236,26 @@ public static class ResponseHandler
                 string newContent = content.Substring(0, match.Index) + args.new_string + content.Substring(match.Index + match.Length);
                 System.IO.File.WriteAllText(safePath, newContent);
 
-                string note = match.Strategy == MatchStrategy.Exact ? "" : $" (matched using {match.Strategy} comparison)";
-                return new ToolChatMessage(toolCall.Id, $"Successfully edited {args.file_path}{note}.");
+                string note = match.Strategy switch
+                {
+                    MatchStrategy.Exact => "",
+                    MatchStrategy.LineLcs when match.Confidence is double c => $" (matched using LCS comparison, confidence {c:0.00})",
+                    _ => $" (matched using {match.Strategy} comparison)"
+                };
+
+                string? diff;
+                try
+                {
+                    diff = PatchHandler.GenerateUnifiedDiff(content, newContent, args.file_path);
+                }
+                catch (InvalidOperationException)
+                {
+                    diff = null;
+                }
+
+                string message = $"Successfully edited {args.file_path}{note}.";
+                if (!string.IsNullOrEmpty(diff)) message += "\n\n" + diff;
+                return new ToolChatMessage(toolCall.Id, ContextManager.TruncateToolResult(message, Configuration.GetMaxToolResultTokens()));
             });
     }
 
