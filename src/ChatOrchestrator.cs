@@ -131,6 +131,10 @@ public static class ChatOrchestrator
         {
             responseContent = FormatApiError(ex);
         }
+        catch (System.IO.IOException) when (responseContent == null)
+        {
+            responseContent = "Error: The model connection was interrupted (the response ended prematurely). This is usually a provider or network issue — retry the request, possibly with a simpler or shorter prompt.";
+        }
         catch (OperationCanceledException)
         {
             if (responseContent == null)
@@ -230,6 +234,14 @@ public static class ChatOrchestrator
                     Console.Error.Flush();
                 }
             }
+        }
+        if (Environment.GetEnvironmentVariable("VERBOSE_TOOLS") == "1" &&
+            !string.IsNullOrEmpty(acc.Arguments) &&
+            !acc.ArgsLogged)
+        {
+            acc.ArgsLogged = true;
+            Console.Error.WriteLine($"\n[v] {acc.FunctionName}: {acc.Arguments}");
+            Console.Error.Flush();
         }
     }
 
@@ -378,4 +390,5 @@ public class ToolCallAccumulator
     public string FunctionName { get; set; } = "";
     public string Arguments { get; set; } = "";
     public bool ArgDisplayed { get; set; }
+    public bool ArgsLogged { get; set; }
 }

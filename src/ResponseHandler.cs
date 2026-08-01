@@ -322,7 +322,7 @@ public static class ResponseHandler
                     return CreateErrorResult(toolCall, "Error: Glob tool missing required parameter 'pattern'.");
                 }
 
-                string safePath = args.path != null
+                string safePath = !string.IsNullOrWhiteSpace(args.path)
                     ? PathValidator.ValidatePath(args.path, Environment.CurrentDirectory)
                     : Environment.CurrentDirectory;
 
@@ -353,7 +353,7 @@ public static class ResponseHandler
         if (string.IsNullOrEmpty(rgPath))
             return CreateErrorResult(toolCall, "Error: ripgrep (rg) not found. Install it with: winget install BurntSushi.ripgrep.MSVC");
 
-        string safePath = args.path != null
+        string safePath = !string.IsNullOrWhiteSpace(args.path)
             ? PathValidator.ValidatePath(args.path, Environment.CurrentDirectory)
             : Environment.CurrentDirectory;
 

@@ -14,7 +14,7 @@ public static class ChatService
         var baseUrl = Configuration.GetBaseUrl();
         var model = Configuration.GetModel();
 
-        var options = new OpenAIClientOptions { Endpoint = new Uri(baseUrl) };
+        var options = new OpenAIClientOptions { Endpoint = new Uri(baseUrl), NetworkTimeout = TimeSpan.FromSeconds(300) };
 
         var siteUrl = Configuration.GetSiteUrl();
         var siteName = Configuration.GetSiteName();

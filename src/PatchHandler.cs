@@ -98,7 +98,7 @@ internal static partial class PatchHandler
         var matchLines = originalLines.Select(TrimCR).ToList();
         bool fileEndsWithNewline = raw.EndsWith("\n");
 
-        var placements = new List<(int HunkNumber, Hunk Hunk, int Index, MatchStrategy Strategy, bool ReachesEnd)>();
+        var placements = new List<(int HunkNumber, Hunk Hunk, int Index, MatchStrategy Strategy, double? Confidence, bool ReachesEnd, int SpanLength)>();
         int noOps = 0;
         for (int i = 0; i < hunks.Count; i++)
         {
@@ -110,7 +110,7 @@ internal static partial class PatchHandler
                 continue;
             }
 
-            int? matchIndex = FindHunkMatch(hunk, matchLines, out MatchStrategy strategy, out string? ambiguity);
+            int? matchIndex = FindHunkMatch(hunk, matchLines, out MatchStrategy strategy, out string? ambiguity, out double? confidence, out int spanLength);
             if (ambiguity != null)
             {
                 return ResponseHandler.CreateErrorResult(toolCall, $"Error: could not apply hunk {i + 1} to '{displayPath}': {ambiguity}");
@@ -118,11 +118,12 @@ internal static partial class PatchHandler
 
             if (matchIndex == null)
             {
-                return ResponseHandler.CreateErrorResult(toolCall, $"Error: could not apply hunk {i + 1} to '{displayPath}' — the changed lines were not found (declared around line {Math.Max(hunk.OldStart, 1)}). The file may have changed or the context lines do not match. Read the file to get the current content and retry with corrected context lines.");
+                string location = hunk.OldStart > 0 ? $"declared around line {hunk.OldStart}" : "with no declared position";
+                return ResponseHandler.CreateErrorResult(toolCall, $"Error: could not apply hunk {i + 1} to '{displayPath}' — the changed lines were not found ({location}). The file may have changed or the context lines do not match. Read the file to get the current content and retry with corrected context lines.");
             }
 
-            bool reachesEnd = matchIndex + hunk.SearchBlockCount >= matchLines.Count;
-            placements.Add((i + 1, hunk, matchIndex.Value, strategy, reachesEnd));
+            bool reachesEnd = matchIndex + spanLength >= matchLines.Count;
+            placements.Add((i + 1, hunk, matchIndex.Value, strategy, confidence, reachesEnd, spanLength));
         }
 
         if (placements.Count == 0)
@@ -133,9 +134,9 @@ internal static partial class PatchHandler
             return new ToolChatMessage(toolCall.Id, $"Successfully applied the patch to {displayPath} ({note}).");
         }
 
-        foreach (var (_, hunk, index, _, _) in placements.OrderByDescending(p => p.Index))
+        foreach (var (_, hunk, index, _, _, _, span) in placements.OrderByDescending(p => p.Index))
         {
-            ApplyHunkToLines(originalLines, hunk, index);
+            ApplyHunkToLines(originalLines, hunk, index, span);
         }
 
         bool trailingNewline = fileEndsWithNewline;
@@ -168,9 +169,9 @@ internal static partial class PatchHandler
 
         var sb = new StringBuilder();
         sb.Append($"Successfully applied {placements.Count} hunk(s) to {displayPath} (+{totalAdded} -{totalRemoved} lines).");
-        foreach (var (num, hunk, _, strategy, _) in placements)
+        foreach (var (num, hunk, _, strategy, conf, _, _) in placements)
         {
-            sb.Append($"\n  hunk {num}: {DescribeHunkMatch(hunk, strategy)}");
+            sb.Append($"\n  hunk {num}: {DescribeHunkMatch(hunk, strategy, conf)}");
         }
         if (noOps > 0)
         {
@@ -183,7 +184,7 @@ internal static partial class PatchHandler
         return new ToolChatMessage(toolCall.Id, ContextManager.TruncateToolResult(sb.ToString(), Configuration.GetMaxToolResultTokens()));
     }
 
-    private static string DescribeHunkMatch(Hunk hunk, MatchStrategy strategy)
+    private static string DescribeHunkMatch(Hunk hunk, MatchStrategy strategy, double? confidence)
     {
         if (hunk.SearchBlockCount == 0)
             return "matched at declared position";
@@ -192,14 +193,17 @@ internal static partial class PatchHandler
             MatchStrategy.Exact => "matched exactly",
             MatchStrategy.NormalizedWhitespace => "matched fuzzily (whitespace)",
             MatchStrategy.UnicodeNormalized => "matched fuzzily (unicode)",
+            MatchStrategy.LineLcs when confidence is double c => $"matched using LCS comparison (confidence {c:0.00})",
             _ => "matched"
         };
     }
 
-    private static int? FindHunkMatch(Hunk hunk, List<string> matchLines, out MatchStrategy strategy, out string? ambiguity)
+    private static int? FindHunkMatch(Hunk hunk, List<string> matchLines, out MatchStrategy strategy, out string? ambiguity, out double? confidence, out int spanLength)
     {
         ambiguity = null;
         strategy = MatchStrategy.Exact;
+        confidence = null;
+        spanLength = hunk.SearchBlockCount;
 
         var searchBlock = hunk.Lines
             .Where(e => e.Type != '+')
@@ -208,7 +212,13 @@ internal static partial class PatchHandler
 
         if (searchBlock.Count == 0)
         {
+            if (hunk.OldStart < 1)
+            {
+                ambiguity = "cannot determine where to insert these lines — the hunk header has no position and the hunk has no context lines. Add context lines or use a '@@ -start,0 +start,count @@' header.";
+                return null;
+            }
             int declared = Math.Clamp(hunk.OldStart - 1, 0, matchLines.Count);
+            spanLength = 0;
             return declared;
         }
 
@@ -216,12 +226,16 @@ internal static partial class PatchHandler
 
         var exact = FindLineSequence(matchLines, searchBlock, ExactCompare);
         if (exact.Count > 0)
+        {
+            spanLength = searchBlock.Count;
             return ResolveCandidates(exact, declaredIndex, ref ambiguity);
+        }
 
         var normalized = FindLineSequence(matchLines, searchBlock, NormalizedCompare);
         if (normalized.Count > 0)
         {
             strategy = MatchStrategy.NormalizedWhitespace;
+            spanLength = searchBlock.Count;
             return ResolveCandidates(normalized, declaredIndex, ref ambiguity);
         }
 
@@ -229,16 +243,98 @@ internal static partial class PatchHandler
         if (unicode.Count > 0)
         {
             strategy = MatchStrategy.UnicodeNormalized;
+            spanLength = searchBlock.Count;
             return ResolveCandidates(unicode, declaredIndex, ref ambiguity);
+        }
+
+        var lcs = FindLineSequenceLcs(matchLines, searchBlock, out double lcsConfidence);
+        if (lcs.Count > 0)
+        {
+            strategy = MatchStrategy.LineLcs;
+            confidence = lcsConfidence;
+            var resolved = ResolveCandidates(lcs.Select(c => c.Start).ToList(), declaredIndex, ref ambiguity);
+            if (resolved != null)
+            {
+                var chosen = lcs.First(c => c.Start == resolved.Value);
+                spanLength = chosen.EndLine - chosen.Start + 1;
+            }
+            return resolved;
         }
 
         return null;
     }
 
+    private static List<(int Start, int EndLine)> FindLineSequenceLcs(List<string> content, List<string> pattern, out double confidence)
+    {
+        confidence = 0;
+        var bestStarts = new List<(int Start, int EndLine)>();
+        if (pattern.Count == 0 || pattern.Count > MatchFinder.MaxLcsPatternLines) return bestStarts;
+        if ((long)content.Count * pattern.Count > MatchFinder.MaxLcsCells) return bestStarts;
+
+        var contentNorm = content.Select(NormalizeForLcs).ToArray();
+        var patternNorm = pattern.Select(NormalizeForLcs).ToArray();
+
+        var index = new Dictionary<string, List<int>>();
+        for (int i = 0; i < contentNorm.Length; i++)
+        {
+            if (!index.TryGetValue(contentNorm[i], out var list))
+            {
+                list = new List<int>();
+                index[contentNorm[i]] = list;
+            }
+            list.Add(i);
+        }
+
+        int bestMatched = -1;
+        for (int s = 0; s < contentNorm.Length; s++)
+        {
+            int cursor = s;
+            int matched = 0;
+            int endLine = -1;
+
+            foreach (string p in patternNorm)
+            {
+                if (!index.TryGetValue(p, out var list)) continue;
+                int idx = list.BinarySearch(cursor);
+                if (idx < 0) idx = ~idx;
+                if (idx >= list.Count) continue;
+                cursor = list[idx] + 1;
+                matched++;
+                endLine = list[idx];
+            }
+
+            if (matched == 0 || endLine - s > pattern.Count + MatchFinder.MaxLcsSkipLines) continue;
+            if ((double)matched / pattern.Count < MatchFinder.MinLcsConfidence) continue;
+
+            if (matched > bestMatched)
+            {
+                bestMatched = matched;
+                bestStarts.Clear();
+                bestStarts.Add((s, endLine));
+            }
+            else if (matched == bestMatched)
+            {
+                bestStarts.Add((s, endLine));
+            }
+        }
+
+        if (bestMatched > 0)
+            confidence = (double)bestMatched / pattern.Count;
+        return bestStarts;
+    }
+
+    private static string NormalizeForLcs(string line) => NormalizeLine(UnicodeNormalize(line));
+
     private static int? ResolveCandidates(List<int> candidates, int declaredIndex, ref string? ambiguity)
     {
         if (candidates.Count == 1)
             return candidates[0];
+
+        if (declaredIndex < 0)
+        {
+            ambiguity = $"the context matched at multiple locations (lines {string.Join(", ", candidates.Select(c => c + 1))}). Include more unique context lines or use the Edit tool instead.";
+            return null;
+        }
 
         int bestDistance = candidates.Min(c => Math.Abs(c - declaredIndex));
         var best = candidates.Where(c => Math.Abs(c - declaredIndex) == bestDistance).ToList();
@@ -249,7 +345,7 @@ internal static partial class PatchHandler
         return null;
     }
 
-    private static void ApplyHunkToLines(List<string> originalLines, Hunk hunk, int matchIndex)
+    private static void ApplyHunkToLines(List<string> originalLines, Hunk hunk, int matchIndex, int spanLength)
     {
         var result = new List<string>();
         int contextCursor = matchIndex;
@@ -270,8 +366,7 @@ internal static partial class PatchHandler
             }
         }
 
-        int searchCount = hunk.SearchBlockCount;
-        originalLines.RemoveRange(matchIndex, searchCount);
+        originalLines.RemoveRange(matchIndex, spanLength);
         originalLines.InsertRange(matchIndex, result);
     }
 
@@ -570,16 +665,16 @@ internal static partial class PatchHandler
                 var match = HunkHeaderRegex().Match(line);
                 if (!match.Success)
                 {
-                    error = $"malformed hunk header '{line}'. Expected format: @@ -start,count +start,count @@";
+                    error = $"malformed hunk header '{line}'. Expected format: @@ -start,count +start,count @@ (or a bare @@ separator).";
                     return null;
                 }
 
                 current = new Hunk
                 {
-                    OldStart = int.Parse(match.Groups[1].Value),
-                    OldCount = match.Groups[2].Success ? int.Parse(match.Groups[2].Value) : 1,
-                    NewStart = int.Parse(match.Groups[3].Value),
-                    NewCount = match.Groups[4].Success ? int.Parse(match.Groups[4].Value) : 1
+                    OldStart = match.Groups[1].Success ? int.Parse(match.Groups[1].Value) : -1,
+                    OldCount = match.Groups[2].Success ? int.Parse(match.Groups[2].Value) : -1,
+                    NewStart = match.Groups[3].Success ? int.Parse(match.Groups[3].Value) : -1,
+                    NewCount = match.Groups[4].Success ? int.Parse(match.Groups[4].Value) : -1
                 };
                 hunks.Add(current);
                 continue;
@@ -589,7 +684,7 @@ internal static partial class PatchHandler
             {
                 if (line.Length == 0 || line[0] != ' ')
                     continue;
-                error = $"expected a @@ hunk header but found '{line}'. The patch must contain at least one @@ -start,count +start,count @@ hunk.";
+                error = $"expected a @@ hunk header but found '{line}'. The patch must contain at least one @@ -start,count +start,count @@ hunk (a bare @@ separator is also accepted).";
                 return null;
             }
 
@@ -599,6 +694,9 @@ internal static partial class PatchHandler
                     current.LastEntryHasNoNewlineMarker = true;
                 continue;
             }
+
+            if (line.StartsWith("***"))
+                continue;
 
             if (line.Length == 0)
                 continue;
@@ -620,27 +718,10 @@ internal static partial class PatchHandler
             return null;
         }
 
-        for (int i = 0; i < hunks.Count; i++)
-        {
-            var hunk = hunks[i];
-            int oldLines = hunk.ContextCount + hunk.RemovedCount;
-            int newLines = hunk.ContextCount + hunk.AddedCount;
-            if (hunk.OldCount != oldLines)
-            {
-                error = $"hunk {i + 1} declares -{hunk.OldStart},{hunk.OldCount} (old) but contains {oldLines} context/removed line(s). Correct the hunk header line counts to match the hunk body.";
-                return null;
-            }
-            if (hunk.NewCount != newLines)
-            {
-                error = $"hunk {i + 1} declares +{hunk.NewStart},{hunk.NewCount} (new) but contains {newLines} context/added line(s). Correct the hunk header line counts to match the hunk body.";
-                return null;
-            }
-        }
-
         return hunks;
     }
 
-    [GeneratedRegex(@"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")]
+    [GeneratedRegex(@"^@@(?:[ ]+-(\d+)(?:,(\d+))?[ ]+\+(\d+)(?:,(\d+))?)?[ ]*(?:@@)?(?:[ ].*)?$")]
     private static partial Regex HunkHeaderRegex();
 
     private sealed class Hunk

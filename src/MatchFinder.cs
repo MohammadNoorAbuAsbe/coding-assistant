@@ -12,10 +12,10 @@ internal sealed record MatchResult(int Index, int Length, MatchStrategy Strategy
 
 internal static class MatchFinder
 {
-    private const int MaxLcsCells = 4_000_000;
-    private const int MaxLcsPatternLines = 512;
-    private const int MaxLcsSkipLines = 8;
-    private const double MinLcsConfidence = 0.7;
+    internal const int MaxLcsCells = 4_000_000;
+    internal const int MaxLcsPatternLines = 512;
+    internal const int MaxLcsSkipLines = 8;
+    internal const double MinLcsConfidence = 0.7;
 
     internal static MatchResult? FindBestMatch(string content, string oldString)
     {
