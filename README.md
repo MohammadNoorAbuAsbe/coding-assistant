@@ -10,7 +10,7 @@ A terminal-based AI coding assistant that uses LLMs to read, write, edit, search
 - **Sub-agents** — delegate complex subtasks to independent sub-agents with their own tool loop
 - **Streaming** — responses appear in real-time as the model generates them
 - **Context window management** — automatic truncation to prevent token overflow
-- **Iteration limits** — prevents infinite loops (configurable, default 20)
+- **Agent loop** — continues working until the task is done (optional `MAX_ITERATIONS` cap)
 - **`.env` support** — load API keys and config from a `.env` file
 - **`config.json`** — customize providers, models, and endpoints
 - **Agent loop** — continues working until the task is done
@@ -76,7 +76,7 @@ dotnet run
 | `OLLAMA_BASE_URL` | No | `http://localhost:11434/v1` | Ollama endpoint |
 | `TAVILY_API_KEY` | For WebSearch | — | API key for Tavily web search (get at https://tavily.com) |
 | `SYSTEM_PROMPT` | No | (built-in) | Override the system prompt |
-| `MAX_ITERATIONS` | No | `20` | Max tool-call iterations before stopping |
+| `MAX_ITERATIONS` | No | unlimited | Optional cap on tool-call iterations; unset = run until done |
 | `MAX_SUB_AGENT_DEPTH` | No | `3` | Max nested sub-agent depth |
 | `CONTEXT_WINDOW_SIZE` | No | `32768` (local) / `128000` (cloud) | Max tokens for context window |
 | `MAX_TOOL_RESULT_TOKENS` | No | 40% of context window | Max tokens per tool result (auto-truncated) |

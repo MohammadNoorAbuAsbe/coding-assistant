@@ -52,7 +52,7 @@ You are a coding assistant with full access to the current workspace directory. 
 
 ## Agent Loop
 
-You are in an agent loop. Each iteration you can call one or more tools. You will receive the results and can make more calls. Keep going until the task is done, then respond with a summary. You have up to 20 iterations.
+You are in an agent loop. Each iteration you can call one or more tools. You will receive the results and can make more calls. Keep going until the task is done, then respond with a summary.
 
 ## Available Tools
 " + ToolDescriptions + @"

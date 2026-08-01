@@ -159,10 +159,10 @@ public static class Configuration
             : null;
     }
 
-    public static int GetMaxIterations()
+    public static int? GetMaxIterations()
     {
         var value = Environment.GetEnvironmentVariable("MAX_ITERATIONS");
-        return int.TryParse(value, out var result) ? result : 20;
+        return int.TryParse(value, out var result) ? result : null;
     }
 
     public static int GetContextWindowSize()

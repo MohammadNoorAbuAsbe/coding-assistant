@@ -18,7 +18,7 @@ public static class ChatOrchestrator
         {
             session.Messages = [new SystemChatMessage(SystemPrompt.GetPrompt(provider))];
             using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
-                await Console.Error.WriteLineAsync($"{provider} · {Configuration.GetModel()} · ctx={contextWindowSize} · max_iter={maxIterations}");
+                await Console.Error.WriteLineAsync($"{provider} · {Configuration.GetModel()} · ctx={contextWindowSize} · max_iter={maxIterations?.ToString() ?? "unlimited"}");
             session.SessionStarted = true;
         }
 
@@ -27,18 +27,20 @@ public static class ChatOrchestrator
         session.Messages = ContextManager.TruncateMessages(session.Messages, contextWindowSize);
     }
 
-    internal static async Task<string> RunSubAgent(ChatClient client, List<ChatMessage> messages, int maxIterations, int contextWindowSize, CancellationToken cancellationToken = default)
+    internal static async Task<string> RunSubAgent(ChatClient client, List<ChatMessage> messages, int? maxIterations, int contextWindowSize, CancellationToken cancellationToken = default)
     {
         var options = ToolHandler.CreateSubAgentCompletionOptions();
         string? finalResponse = null;
 
-        for (int iteration = 0; iteration < maxIterations; iteration++)
+        for (int iteration = 0; maxIterations == null || iteration < maxIterations; iteration++)
         {
             if (cancellationToken.IsCancellationRequested)
                 break;
 
             using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
-                await Console.Error.WriteLineAsync($"  [sub-agent {iteration + 1}/{maxIterations}]");
+                await Console.Error.WriteLineAsync(maxIterations == null
+                    ? $"  [sub-agent iteration {iteration + 1}]"
+                    : $"  [sub-agent {iteration + 1}/{maxIterations}]");
 
             var (accumulatedToolCalls, responseContent) = await ProcessStreamingUpdates(client, messages, options, cancellationToken);
 
@@ -64,11 +66,11 @@ public static class ChatOrchestrator
         ChatClient client,
         List<ChatMessage> messages,
         ChatCompletionOptions options,
-        int maxIterations,
+        int? maxIterations,
         int contextWindowSize,
         CancellationToken cancellationToken)
     {
-        for (int iteration = 0; iteration < maxIterations; iteration++)
+        for (int iteration = 0; maxIterations == null || iteration < maxIterations; iteration++)
         {
             if (cancellationToken.IsCancellationRequested)
             {
@@ -78,7 +80,7 @@ public static class ChatOrchestrator
             }
 
             using (ConsoleStyler.WithColor(ConsoleColor.Yellow))
-                await Console.Error.WriteAsync($"[{iteration + 1}/{maxIterations}]");
+                await Console.Error.WriteAsync(maxIterations == null ? $"[{iteration + 1}]" : $"[{iteration + 1}/{maxIterations}]");
             using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
                 await Console.Error.WriteLineAsync(" Thinking...");
 
@@ -90,7 +92,7 @@ public static class ChatOrchestrator
                 {
                     Console.WriteLine();
 
-                    if (LooksLikeSkippedEdit(responseContent) && iteration < maxIterations - 1 && !UserRequestedPreviewOnly(messages))
+                    if (LooksLikeSkippedEdit(responseContent) && (maxIterations == null || iteration < maxIterations - 1) && !UserRequestedPreviewOnly(messages))
                     {
                         messages.Add(new AssistantChatMessage(responseContent));
                         messages.Add(new UserChatMessage("You described the code changes above but did not apply them. Execute the necessary Edit or ApplyPatch tool calls now to actually make these changes to the files. Do not repeat the descriptions — just apply them."));
