@@ -191,11 +191,11 @@ internal static partial class PatchHandler
             return ResolveCandidates(normalized, declaredIndex, ref ambiguity, ref fuzzy);
         }
 
-        var stripped = FindLineSequence(matchLines, searchBlock, StrippedCompare);
-        if (stripped.Count > 0)
+        var unicode = FindLineSequence(matchLines, searchBlock, UnicodeNormalizedCompare);
+        if (unicode.Count > 0)
         {
             fuzzy = true;
-            return ResolveCandidates(stripped, declaredIndex, ref ambiguity, ref fuzzy);
+            return ResolveCandidates(unicode, declaredIndex, ref ambiguity, ref fuzzy);
         }
 
         return null;
@@ -443,7 +443,8 @@ internal static partial class PatchHandler
 
     private static bool NormalizedCompare(string a, string b) => NormalizeLine(a) == NormalizeLine(b);
 
-    private static bool StrippedCompare(string a, string b) => StripLine(a) == StripLine(b);
+    private static bool UnicodeNormalizedCompare(string a, string b) =>
+        NormalizeLine(UnicodeNormalize(a)) == NormalizeLine(UnicodeNormalize(b));
 
     private static string NormalizeLine(string line)
     {
@@ -468,8 +469,35 @@ internal static partial class PatchHandler
         return sb.ToString().Trim();
     }
 
-    private static string StripLine(string line) =>
-        string.Concat(line.Where(c => !char.IsWhiteSpace(c)));
+    private static string UnicodeNormalize(string line)
+    {
+        var sb = new StringBuilder(line.Length);
+        foreach (char c in line)
+        {
+            switch (c)
+            {
+                case '\u2018':
+                case '\u2019':
+                    sb.Append('\'');
+                    break;
+                case '\u201C':
+                case '\u201D':
+                    sb.Append('"');
+                    break;
+                case '\u2013':
+                case '\u2014':
+                    sb.Append('-');
+                    break;
+                case '\u00A0':
+                    sb.Append(' ');
+                    break;
+                default:
+                    sb.Append(c);
+                    break;
+            }
+        }
+        return sb.ToString();
+    }
 
     private static string TrimCR(string line) =>
         line.Length > 0 && line[line.Length - 1] == '\r' ? line.Substring(0, line.Length - 1) : line;
