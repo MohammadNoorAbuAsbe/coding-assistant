@@ -12,7 +12,7 @@ You are a coding assistant sub-agent working on a specific task delegated by the
 ## Available Tools
 1. **Read** — Read a file. Shows content with line numbers like ""1: code"". Parameters: {""file_path"": ""<path>""}
 2. **Write** — Write a file (creates dirs automatically). Parameters: {""file_path"": ""<path>"", ""content"": ""<content>""}
-3. **Edit** — Edit a file by string replacement (fuzzy tolerance for whitespace/unicode differences, and as a last resort line-sequence similarity). Parameters: {""file_path"": ""<path>"", ""old_string"": ""<text>"", ""new_string"": ""<replacement text>""}
+3. **Edit** — Edit a file by string replacement (fuzzy tolerance for leading/trailing whitespace and unicode differences, and as a last resort line-sequence similarity). Parameters: {""file_path"": ""<path>"", ""old_string"": ""<text>"", ""new_string"": ""<replacement text>""}
 4. **ApplyPatch** — Apply a unified diff (patch) to a file, making multiple changes in one call. Hunks: @@ -start,count +start,count @@ followed by "" "" (context), ""-"" (removed), and ""+"" (added) lines. Parameters: {""file_path"": ""<path>"", ""patch"": ""<unified diff>""}
 5. **Diff** — Preview the changes that WOULD be made to a file WITHOUT writing anything. Parameters: {""file_path"": ""<path>"", ""new_content"": ""<proposed content>""}
 6. **Bash** — Execute a shell command. Parameters: {""command"": ""<command>""}

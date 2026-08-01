@@ -186,25 +186,7 @@ internal static class MatchFinder
         if (line.Length > 0 && line[line.Length - 1] == '\r')
             line = line.Substring(0, line.Length - 1);
 
-        var sb = new System.Text.StringBuilder();
-        bool lastWasSpace = false;
-        foreach (char c in line)
-        {
-            if (char.IsWhiteSpace(c))
-            {
-                if (!lastWasSpace)
-                {
-                    sb.Append(' ');
-                    lastWasSpace = true;
-                }
-            }
-            else
-            {
-                sb.Append(c);
-                lastWasSpace = false;
-            }
-        }
-        return sb.ToString().Trim();
+        return line.Trim();
     }
 
     private static string UnicodeNormalizeLine(string line) => NormalizeLine(UnicodeNormalize(line));

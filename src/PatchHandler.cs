@@ -482,25 +482,8 @@ internal static partial class PatchHandler
 
     private static string NormalizeLine(string line)
     {
-        var sb = new StringBuilder();
-        bool lastWasSpace = false;
-        foreach (char c in line)
-        {
-            if (char.IsWhiteSpace(c))
-            {
-                if (!lastWasSpace)
-                {
-                    sb.Append(' ');
-                    lastWasSpace = true;
-                }
-            }
-            else
-            {
-                sb.Append(c);
-                lastWasSpace = false;
-            }
-        }
-        return sb.ToString().Trim();
+        line = TrimCR(line);
+        return line.Trim();
     }
 
     private static string UnicodeNormalize(string line)
@@ -594,7 +577,9 @@ internal static partial class PatchHandler
                 current = new Hunk
                 {
                     OldStart = int.Parse(match.Groups[1].Value),
-                    NewStart = int.Parse(match.Groups[3].Value)
+                    OldCount = match.Groups[2].Success ? int.Parse(match.Groups[2].Value) : 1,
+                    NewStart = int.Parse(match.Groups[3].Value),
+                    NewCount = match.Groups[4].Success ? int.Parse(match.Groups[4].Value) : 1
                 };
                 hunks.Add(current);
                 continue;
@@ -635,6 +620,23 @@ internal static partial class PatchHandler
             return null;
         }
 
+        for (int i = 0; i < hunks.Count; i++)
+        {
+            var hunk = hunks[i];
+            int oldLines = hunk.ContextCount + hunk.RemovedCount;
+            int newLines = hunk.ContextCount + hunk.AddedCount;
+            if (hunk.OldCount != oldLines)
+            {
+                error = $"hunk {i + 1} declares -{hunk.OldStart},{hunk.OldCount} (old) but contains {oldLines} context/removed line(s). Correct the hunk header line counts to match the hunk body.";
+                return null;
+            }
+            if (hunk.NewCount != newLines)
+            {
+                error = $"hunk {i + 1} declares +{hunk.NewStart},{hunk.NewCount} (new) but contains {newLines} context/added line(s). Correct the hunk header line counts to match the hunk body.";
+                return null;
+            }
+        }
+
         return hunks;
     }
 
@@ -644,7 +646,9 @@ internal static partial class PatchHandler
     private sealed class Hunk
     {
         public int OldStart { get; set; }
+        public int OldCount { get; set; }
         public int NewStart { get; set; }
+        public int NewCount { get; set; }
         public List<PatchLine> Lines { get; } = [];
 
         public int SearchBlockCount => Lines.Count(e => e.Type != '+');
