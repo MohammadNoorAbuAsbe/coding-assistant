@@ -3,10 +3,8 @@ namespace TerminalAiAssistant;
 internal enum MatchStrategy
 {
     Exact,
-    CaseInsensitive,
     NormalizedWhitespace,
-    LineNormalized,
-    LineFuzzy
+    UnicodeNormalized
 }
 
 internal sealed record MatchResult(int Index, int Length, MatchStrategy Strategy);
@@ -17,60 +15,47 @@ internal static class MatchFinder
     {
         if (string.IsNullOrEmpty(oldString)) return null;
 
-        var result = TryMatch(content, oldString, StringComparison.Ordinal, MatchStrategy.Exact);
-        if (result != null) return result;
-
-        result = TryMatch(content, oldString, StringComparison.OrdinalIgnoreCase, MatchStrategy.CaseInsensitive);
+        var result = TryMatch(content, oldString, MatchStrategy.Exact);
         if (result != null) return result;
 
         result = TryMatchLineNormalized(content, oldString);
         if (result != null) return result;
 
-        result = TryMatchLineFuzzy(content, oldString);
+        result = TryMatchLineUnicode(content, oldString);
         if (result != null) return result;
 
         return null;
     }
 
-    private static MatchResult? TryMatch(string content, string oldString, StringComparison comparison, MatchStrategy strategy)
+    private static MatchResult? TryMatch(string content, string oldString, MatchStrategy strategy)
     {
-        int first = content.IndexOf(oldString, comparison);
+        int first = content.IndexOf(oldString, StringComparison.Ordinal);
         if (first == -1) return null;
 
-        int last = content.LastIndexOf(oldString, comparison);
+        int last = content.LastIndexOf(oldString, StringComparison.Ordinal);
         return first == last ? new MatchResult(first, oldString.Length, strategy) : null;
     }
 
-    private static MatchResult? TryMatchLineNormalized(string content, string oldString)
+    private static MatchResult? TryMatchLineNormalized(string content, string oldString) =>
+        TryMatchLineNormalizedCore(content, oldString, NormalizeLine, MatchStrategy.NormalizedWhitespace);
+
+    private static MatchResult? TryMatchLineUnicode(string content, string oldString) =>
+        TryMatchLineNormalizedCore(content, oldString, UnicodeNormalizeLine, MatchStrategy.UnicodeNormalized);
+
+    private static MatchResult? TryMatchLineNormalizedCore(string content, string oldString, Func<string, string> normalize, MatchStrategy strategy)
     {
         var (contentLines, lineOffsets) = SplitIntoLines(content);
         var oldLines = SplitIntoLines(oldString).Lines;
         if (oldLines.Length == 0) return null;
 
-        var contentNorm = contentLines.Select(NormalizeLine).ToArray();
-        var oldNorm = oldLines.Select(NormalizeLine).ToArray();
+        var contentNorm = contentLines.Select(normalize).ToArray();
+        var oldNorm = oldLines.Select(normalize).ToArray();
 
         var matches = FindLineSequence(contentNorm, oldNorm);
         if (matches.Count == 0) return null;
         if (matches.Count > 1) return null;
 
-        return BuildLineMatchResult(content, contentLines, oldLines, oldNorm[0], lineOffsets, matches[0], MatchStrategy.LineNormalized);
-    }
-
-    private static MatchResult? TryMatchLineFuzzy(string content, string oldString)
-    {
-        var (contentLines, lineOffsets) = SplitIntoLines(content);
-        var oldLines = SplitIntoLines(oldString).Lines;
-        if (oldLines.Length == 0) return null;
-
-        var contentStrip = contentLines.Select(StripLine).ToArray();
-        var oldStrip = oldLines.Select(StripLine).ToArray();
-
-        var matches = FindLineSequence(contentStrip, oldStrip);
-        if (matches.Count == 0) return null;
-        if (matches.Count > 1) return null;
-
-        return BuildLineMatchResult(content, contentLines, oldLines, NormalizeLine(oldLines[0]), lineOffsets, matches[0], MatchStrategy.LineFuzzy);
+        return BuildLineMatchResult(content, contentLines, oldLines, lineOffsets, matches[0], strategy, normalize);
     }
 
     private static (string[] Lines, int[] Offsets) SplitIntoLines(string text)
@@ -139,17 +124,41 @@ internal static class MatchFinder
         return sb.ToString().Trim();
     }
 
-    private static string StripLine(string line)
-    {
-        if (line.Length > 0 && line[line.Length - 1] == '\r')
-            line = line.Substring(0, line.Length - 1);
+    private static string UnicodeNormalizeLine(string line) => NormalizeLine(UnicodeNormalize(line));
 
-        return string.Concat(line.Where(c => !char.IsWhiteSpace(c)));
+    private static string UnicodeNormalize(string line)
+    {
+        var sb = new System.Text.StringBuilder(line.Length);
+        foreach (char c in line)
+        {
+            switch (c)
+            {
+                case '\u2018':
+                case '\u2019':
+                    sb.Append('\'');
+                    break;
+                case '\u201C':
+                case '\u201D':
+                    sb.Append('"');
+                    break;
+                case '\u2013':
+                case '\u2014':
+                    sb.Append('-');
+                    break;
+                case '\u00A0':
+                    sb.Append(' ');
+                    break;
+                default:
+                    sb.Append(c);
+                    break;
+            }
+        }
+        return sb.ToString();
     }
 
-    private static MatchResult? BuildLineMatchResult(string content, string[] contentLines, string[] oldLines, string oldFirstNormalized, int[] lineOffsets, int matchLine, MatchStrategy strategy)
+    private static MatchResult? BuildLineMatchResult(string content, string[] contentLines, string[] oldLines, int[] lineOffsets, int matchLine, MatchStrategy strategy, Func<string, string> normalize)
     {
-        int posInLine = FindPositionInLine(contentLines[matchLine], oldLines[0], oldFirstNormalized);
+        int posInLine = FindPositionInLine(contentLines[matchLine], oldLines[0], normalize(oldLines[0]), normalize);
         if (posInLine == -1) return null;
 
         int absolutePos = lineOffsets[matchLine] + posInLine;
@@ -165,23 +174,19 @@ internal static class MatchFinder
 
         bool firstLineMatches =
             actualFirstLine == oldLines[0] ||
-            NormalizeLine(actualFirstLine) == NormalizeLine(oldLines[0]) ||
-            StripLine(actualFirstLine) == StripLine(oldLines[0]);
+            normalize(actualFirstLine) == normalize(oldLines[0]);
 
         if (!firstLineMatches) return null;
 
         return new MatchResult(absolutePos, contentLength, strategy);
     }
 
-    private static int FindPositionInLine(string contentLine, string oldFirstLine, string oldFirstNormalized)
+    private static int FindPositionInLine(string contentLine, string oldFirstLine, string oldFirstNormalized, Func<string, string> normalize)
     {
         int idx = contentLine.IndexOf(oldFirstLine, StringComparison.Ordinal);
         if (idx != -1) return idx;
 
-        idx = contentLine.IndexOf(oldFirstLine, StringComparison.OrdinalIgnoreCase);
-        if (idx != -1) return idx;
-
-        string contentNorm = NormalizeLine(contentLine);
+        string contentNorm = normalize(contentLine);
         int normIdx = contentNorm.IndexOf(oldFirstNormalized, StringComparison.Ordinal);
         if (normIdx == -1) return -1;
 

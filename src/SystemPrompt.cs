@@ -5,7 +5,7 @@ public static class SystemPrompt
     private const string ToolDescriptions = @"
 1. **Read** — Read a file. Shows content with line numbers like ""1: code"". Parameters: {""file_path"": ""<path>""}
 2. **Write** — Write a file (creates dirs automatically). Parameters: {""file_path"": ""<path>"", ""content"": ""<content>""}
-3. **Edit** — Edit a file by string replacement. The old text is matched with fuzzy tolerance for whitespace and case differences, so it need not be byte-for-byte exact. Can span multiple lines. Parameters: {""file_path"": ""<path>"", ""old_string"": ""<text>"", ""new_string"": ""<replacement text>""}
+3. **Edit** — Edit a file by string replacement. The old text is matched with fuzzy tolerance for whitespace and unicode differences, so it need not be byte-for-byte exact. Can span multiple lines. Parameters: {""file_path"": ""<path>"", ""old_string"": ""<text>"", ""new_string"": ""<replacement text>""}
 4. **ApplyPatch** — Apply a unified diff (patch) to a file, making many changes in one call. Hunks: @@ -start,count +start,count @@ followed by lines prefixed with "" "" (context), ""-"" (removed), and ""+"" (added). No timestamps in headers. Hunks match fuzzily (whitespace differences tolerated). Code fences around the patch are ignored. To create a new file, the file must not exist and the patch must contain only ""+"" lines. Parameters: {""file_path"": ""<path>"", ""patch"": ""<unified diff>""}.
 5. **Diff** — Preview the changes that WOULD be made to a file WITHOUT writing anything. Compares file_path on disk with new_content and returns a unified diff. Parameters: {""file_path"": ""<path>"", ""new_content"": ""<proposed content>""}.
 6. **Bash** — Execute a shell command. Parameters: {""command"": ""<command>""}
@@ -20,7 +20,7 @@ public static class SystemPrompt
     private const string EditToolChoiceSection = @"
 ## Choosing the Right Edit Tool
 
-- **Single small change** → use **Edit** (fuzzy matching tolerates whitespace/case differences).
+- **Single small change** → use **Edit** (fuzzy matching tolerates whitespace/unicode differences).
 - **Multiple hunks or whole sections** → use **ApplyPatch** — it applies many changes in one call and matches by content.
 - **Preview before committing** → use **Diff** first (it never writes), then ApplyPatch or Edit. Flow: Diff → ApplyPatch.
 - There is NO line-number-based edit tool. Never edit by line numbers — always match by content.";

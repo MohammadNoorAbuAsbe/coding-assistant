@@ -21,7 +21,7 @@ public static class ToolHandler
 
     private const string ReadFunctionDescription = "Read and return the contents of a file";
     private const string WriteFunctionDescription = "Write content to a file";
-    private const string EditFunctionDescription = "Edit a file by performing a string replacement. Use this to make targeted changes instead of rewriting the entire file. Provide the old text to find and the new text to replace it with. The old text is matched with fuzzy tolerance for whitespace and case differences, so it need not be byte-for-byte exact. Can span multiple lines for larger replacements.";
+    private const string EditFunctionDescription = "Edit a file by performing a string replacement. Use this to make targeted changes instead of rewriting the entire file. Provide the old text to find and the new text to replace it with. The old text is matched with fuzzy tolerance for whitespace and unicode differences, so it need not be byte-for-byte exact. Can span multiple lines for larger replacements.";
     private const string ApplyPatchFunctionDescription = "Apply a unified diff (patch) to a file, making multiple changes in one call. The patch must contain one or more hunks in the format '@@ -start,count +start,count @@' followed by lines prefixed with ' ' (context), '-' (removed), and '+' (added). File headers (--- / +++) are optional and must not include timestamps. Hunks are located by content with fuzzy tolerance for whitespace differences, so context lines need not match byte-for-byte. Code fences around the patch are ignored. To create a new file, the file must not exist and the patch must contain only '+' lines. Use this instead of repeated Edit calls when changes span multiple hunks.";
     private const string DiffFunctionDescription = "Generate a preview of the changes that would be made to a file, WITHOUT writing anything. Compares the current contents of file_path on disk with new_content and returns a unified diff with @@ hunks. Use this to inspect a change before applying it with the ApplyPatch or Edit tools. Returns 'No differences' if the content is identical.";
     private const string BashFunctionDescription = "Execute a shell command";
@@ -52,7 +52,7 @@ public static class ToolHandler
         CreateTool(EditFunctionName, EditFunctionDescription, [FilePathPropertyName, "old_string", "new_string"],
             StringProperties(
                 (FilePathPropertyName, "The path to the file to edit"),
-                ("old_string", "The text to search for (matched with fuzzy tolerance for whitespace and case differences)"),
+                ("old_string", "The text to search for (matched with fuzzy tolerance for whitespace and unicode differences)"),
                 ("new_string", "The text to replace it with")));
 
     public static ChatTool CreateApplyPatchTool() =>
