@@ -14,6 +14,8 @@ public static class Configuration
     private static string? _model;
     private static string? _apiKey;
     private static string? _baseUrl;
+    private static int? _contextWindowSizeCache;
+    private static string? _contextWindowSource;
 
     internal static Dictionary<string, ProviderConfig> Providers { get; private set; } = new();
 
@@ -117,9 +119,14 @@ public static class Configuration
         _model = Providers[providerId].DefaultModel;
         _apiKey = null;
         _baseUrl = null;
+        _contextWindowSizeCache = null;
     }
 
-    public static void SetModel(string model) => _model = model;
+    public static void SetModel(string model)
+    {
+        _model = model;
+        _contextWindowSizeCache = null;
+    }
 
     public static string GetProvider() => _provider ?? OllamaName;
 
@@ -171,8 +178,66 @@ public static class Configuration
     {
         var value = Environment.GetEnvironmentVariable("CONTEXT_WINDOW_SIZE");
         if (int.TryParse(value, out var result)) return result;
-        return GetProvider() == OllamaName ? 32768 : 128000;
+        if (_contextWindowSizeCache.HasValue) return _contextWindowSizeCache.Value;
+        return ModelCatalog.Lookup(GetModel()) ?? (GetProvider() == OllamaName ? 32768 : 128000);
     }
+
+    /// <summary>
+    /// Resolves the context window size for the current model and caches it:
+    /// explicit CONTEXT_WINDOW_SIZE env override first, then the provider API
+    /// (Ollama/OpenRouter), then the static model catalog. Never throws; on
+    /// failure the catalog/defaults are used and GetContextWindowSource()
+    /// reports where the value came from.
+    /// </summary>
+    public static async Task RefreshContextWindowSizeAsync(CancellationToken cancellationToken = default)
+    {
+        _contextWindowSizeCache = null;
+        _contextWindowSource = null;
+
+        var value = Environment.GetEnvironmentVariable("CONTEXT_WINDOW_SIZE");
+        if (int.TryParse(value, out var result))
+        {
+            _contextWindowSizeCache = result;
+            _contextWindowSource = "env";
+            return;
+        }
+
+        string? apiKey = null;
+        try
+        {
+            apiKey = GetApiKey();
+        }
+        catch
+        {
+            // Discovery must not fail startup when the key is missing;
+            // the catalog fallback will be used instead.
+        }
+
+        var discovered = await ContextWindowDiscovery.FetchAsync(GetProvider(), GetBaseUrl(), GetModel(), apiKey, cancellationToken);
+        if (discovered.HasValue)
+        {
+            _contextWindowSizeCache = discovered.Value;
+            _contextWindowSource = "api";
+            return;
+        }
+
+        var catalog = ModelCatalog.Lookup(GetModel());
+        if (catalog.HasValue)
+        {
+            _contextWindowSizeCache = catalog.Value;
+            _contextWindowSource = "catalog";
+            return;
+        }
+
+        _contextWindowSizeCache = GetProvider() == OllamaName ? 32768 : 128000;
+        _contextWindowSource = "default";
+    }
+
+    /// <summary>
+    /// Where the cached context window size came from: "env", "api", "catalog",
+    /// "default", or null if RefreshContextWindowSizeAsync has not been called.
+    /// </summary>
+    public static string? GetContextWindowSource() => _contextWindowSource;
 
     public static int GetMaxToolResultTokens()
     {

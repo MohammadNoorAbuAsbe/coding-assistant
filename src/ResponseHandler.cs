@@ -201,62 +201,90 @@ public static class ResponseHandler
             toolCall,
             "Expected format: {\"file_path\": \"<path>\", \"old_string\": \"<text>\", \"new_string\": \"<text>\"}",
             "editing file",
-            args =>
-            {
-                if (args.file_path == null)
-                {
-                    return CreateErrorResult(toolCall, "Error: Edit tool missing required parameter 'file_path'.");
-                }
+            args => ExecuteEditFile(toolCall, args));
+    }
 
-                if (args.old_string == null)
-                {
-                    return CreateErrorResult(toolCall, "Error: Edit tool missing required parameter 'old_string'.");
-                }
+    private static ToolChatMessage ExecuteEditFile(ChatToolCall toolCall, ToolHandler.EditFileCall args)
+    {
+        var validationError = ValidateEditArgs(toolCall, args);
+        if (validationError != null)
+        {
+            return validationError;
+        }
 
-                if (args.new_string == null)
-                {
-                    return CreateErrorResult(toolCall, "Error: Edit tool missing required parameter 'new_string'.");
-                }
+        string safePath = PathValidator.ValidatePath(args.file_path!, Environment.CurrentDirectory);
+        if (!System.IO.File.Exists(safePath))
+        {
+            return CreateErrorResult(toolCall, $"Error: file not found '{args.file_path}'.");
+        }
 
-                string safePath = PathValidator.ValidatePath(args.file_path, Environment.CurrentDirectory);
+        string content = System.IO.File.ReadAllText(safePath);
+        var match = MatchFinder.FindBestMatch(content, args.old_string!);
+        if (match == null)
+        {
+            return CreateErrorResult(toolCall, $"Error: Edit tool could not find the specified 'old_string' in '{args.file_path}'. Use the ApplyPatch tool instead — Read the file first, then submit a patch with correct context lines.");
+        }
 
-                if (!System.IO.File.Exists(safePath))
-                {
-                    return CreateErrorResult(toolCall, $"Error: file not found '{args.file_path}'.");
-                }
+        return ApplyEditAndCreateResult(toolCall, args.file_path!, safePath, content, match, args.new_string!);
+    }
 
-                string content = System.IO.File.ReadAllText(safePath);
+    private static ToolChatMessage? ValidateEditArgs(ChatToolCall toolCall, ToolHandler.EditFileCall args)
+    {
+        if (args.file_path == null)
+        {
+            return CreateErrorResult(toolCall, "Error: Edit tool missing required parameter 'file_path'.");
+        }
+        if (args.old_string == null)
+        {
+            return CreateErrorResult(toolCall, "Error: Edit tool missing required parameter 'old_string'.");
+        }
+        if (args.new_string == null)
+        {
+            return CreateErrorResult(toolCall, "Error: Edit tool missing required parameter 'new_string'.");
+        }
+        return null;
+    }
 
-                var match = MatchFinder.FindBestMatch(content, args.old_string);
-                if (match == null)
-                {
-                    return CreateErrorResult(toolCall, $"Error: Edit tool could not find the specified 'old_string' in '{args.file_path}'. Use the ApplyPatch tool instead — Read the file first, then submit a patch with correct context lines.");
-                }
+    private static ToolChatMessage ApplyEditAndCreateResult(
+        ChatToolCall toolCall,
+        string filePath,
+        string safePath,
+        string content,
+        MatchResult match,
+        string newString)
+    {
+        string newContent = content.Substring(0, match.Index) + newString + content.Substring(match.Index + match.Length);
+        System.IO.File.WriteAllText(safePath, newContent);
 
-                string newContent = content.Substring(0, match.Index) + args.new_string + content.Substring(match.Index + match.Length);
-                System.IO.File.WriteAllText(safePath, newContent);
+        string note = GetMatchNote(match);
+        string? diff = TryGenerateDiff(content, newContent, filePath);
 
-                string note = match.Strategy switch
-                {
-                    MatchStrategy.Exact => "",
-                    MatchStrategy.LineLcs when match.Confidence is double c => $" (matched using LCS comparison, confidence {c:0.00})",
-                    _ => $" (matched using {match.Strategy} comparison)"
-                };
+        string message = $"Successfully edited {filePath}{note}.";
+        if (!string.IsNullOrEmpty(diff))
+        {
+            message += "\n\n" + diff;
+        }
 
-                string? diff;
-                try
-                {
-                    diff = PatchHandler.GenerateUnifiedDiff(content, newContent, args.file_path);
-                }
-                catch (InvalidOperationException)
-                {
-                    diff = null;
-                }
+        return new ToolChatMessage(toolCall.Id, ContextManager.TruncateToolResult(message, Configuration.GetMaxToolResultTokens()));
+    }
 
-                string message = $"Successfully edited {args.file_path}{note}.";
-                if (!string.IsNullOrEmpty(diff)) message += "\n\n" + diff;
-                return new ToolChatMessage(toolCall.Id, ContextManager.TruncateToolResult(message, Configuration.GetMaxToolResultTokens()));
-            });
+    private static string GetMatchNote(MatchResult match) => match.Strategy switch
+    {
+        MatchStrategy.Exact => "",
+        MatchStrategy.LineLcs when match.Confidence is double c => $" (matched using LCS comparison, confidence {c:0.00})",
+        _ => $" (matched using {match.Strategy} comparison)"
+    };
+
+    private static string? TryGenerateDiff(string content, string newContent, string filePath)
+    {
+        try
+        {
+            return PatchHandler.GenerateUnifiedDiff(content, newContent, filePath);
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     private static async Task<ToolChatMessage?> ProcessPowershellCallAsync(ChatToolCall toolCall, CancellationToken cancellationToken)

@@ -11,6 +11,8 @@ Configuration.SetProvider(providerId);
 var model = AppBootstrapper.ResolveModel(providerId, providers[providerId]);
 Configuration.SetModel(model);
 
+await Configuration.RefreshContextWindowSizeAsync();
+
 var session = new ChatSession();
 
 using var cts = new CancellationTokenSource();

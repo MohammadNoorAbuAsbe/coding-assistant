@@ -18,7 +18,11 @@ public static class ChatOrchestrator
         {
             session.Messages = [new SystemChatMessage(SystemPrompt.GetPrompt(provider))];
             using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
-                await Console.Error.WriteLineAsync($"{provider} · {Configuration.GetModel()} · ctx={contextWindowSize} · max_iter={maxIterations?.ToString() ?? "unlimited"}");
+            {
+                var ctxSource = Configuration.GetContextWindowSource();
+                var ctxLabel = ctxSource == null ? $"{contextWindowSize}" : $"{contextWindowSize} ({ctxSource})";
+                await Console.Error.WriteLineAsync($"{provider} · {Configuration.GetModel()} · ctx={ctxLabel} · max_iter={maxIterations?.ToString() ?? "unlimited"}");
+            }
             session.SessionStarted = true;
         }
 
