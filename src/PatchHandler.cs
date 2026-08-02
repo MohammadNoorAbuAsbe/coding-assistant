@@ -385,6 +385,15 @@ internal static partial class PatchHandler
         if (!changes.Any(c => c.Type != ' '))
             return "";
 
+        if (!newText.EndsWith('\n') && changes.Count > 0)
+        {
+            int lastNewIndex = changes.Count - 1;
+            while (lastNewIndex >= 0 && changes[lastNewIndex].Type == '-')
+                lastNewIndex--;
+            if (lastNewIndex >= 0)
+                changes[lastNewIndex] = changes[lastNewIndex] with { MarkerAfter = true };
+        }
+
         var hunks = GroupChangesIntoHunks(changes, contextLines: 3);
 
         var sb = new StringBuilder();
@@ -415,6 +424,8 @@ internal static partial class PatchHandler
         {
             sb.Append(entry.Type);
             sb.AppendLine(entry.Text);
+            if (entry.MarkerAfter)
+                sb.AppendLine("\\ No newline at end of file");
         }
     }
 
@@ -721,7 +732,7 @@ internal static partial class PatchHandler
         return hunks;
     }
 
-    [GeneratedRegex(@"^@@(?:[ ]+-(\d+)(?:,(\d+))?[ ]+\+(\d+)(?:,(\d+))?)?[ ]*(?:@@)?(?:[ ].*)?$")]
+    [GeneratedRegex(@"^@@(?:[ ]+-(\d+)(?:,(\d+))?[ ]+\+(\d+)(?:,(\d+))?)?(?:[ ]*@@(?:[ ]+.*)?)?[ ]*$")]
     private static partial Regex HunkHeaderRegex();
 
     private sealed class Hunk
@@ -741,7 +752,7 @@ internal static partial class PatchHandler
 
     private sealed record PatchLine(char Type, string Text);
 
-    private sealed record DiffChange(char Type, string Text);
+    private sealed record DiffChange(char Type, string Text, bool MarkerAfter = false);
 
     private sealed class DiffHunk
     {

@@ -176,6 +176,16 @@ dotnet build
 
 The compiled output will be in `bin/Debug/net10.0/`.
 
+## Testing
+
+The project includes an xUnit test suite covering the fuzzy matching engine, patch application, diff generation, path validation, context management, tool schemas, and end-to-end tool behavior:
+
+```sh
+dotnet test
+```
+
+Test projects live under `tests/`. CI (GitHub Actions, `.github/workflows/ci.yml`) runs the full suite on both Windows and Ubuntu on every push and pull request. Grep end-to-end tests are skipped automatically when ripgrep is not installed.
+
 ## Usage Examples
 
 ### Interactive Mode
