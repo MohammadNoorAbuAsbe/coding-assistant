@@ -18,6 +18,7 @@ public class ConfigurationTests
         Assert.True(Configuration.Providers.ContainsKey("ollama"));
         Assert.True(Configuration.Providers.ContainsKey("openrouter"));
         Assert.True(Configuration.Providers.ContainsKey("openai"));
+        Assert.True(Configuration.Providers.ContainsKey("gemini"));
 
         var ollama = Configuration.Providers["ollama"];
         Assert.False(ollama.NeedsApiKey);
@@ -34,6 +35,12 @@ public class ConfigurationTests
         Assert.True(openai.NeedsApiKey);
         Assert.Equal("OPENAI_API_KEY", openai.ApiKeyEnvVar);
         Assert.Equal("https://api.openai.com/v1", openai.BaseUrl);
+
+        var gemini = Configuration.Providers["gemini"];
+        Assert.True(gemini.NeedsApiKey);
+        Assert.Equal("GEMINI_API_KEY", gemini.ApiKeyEnvVar);
+        Assert.Equal("https://generativelanguage.googleapis.com/v1beta/openai", gemini.BaseUrl);
+        Assert.Equal("gemini-3.6-flash", gemini.DefaultModel);
     }
 
     [Fact]

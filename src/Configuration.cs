@@ -8,6 +8,7 @@ public static class Configuration
     private const string OllamaBaseUrl = "http://localhost:11434/v1";
     private const string OpenRouterBaseUrl = "https://openrouter.ai/api/v1";
     private const string OpenAiBaseUrl = "https://api.openai.com/v1";
+    private const string GeminiBaseUrl = "https://generativelanguage.googleapis.com/v1beta/openai";
 
     private static string? _provider;
     private static string? _model;
@@ -61,6 +62,7 @@ public static class Configuration
             [OllamaName] = new() { Id = OllamaName, DisplayName = "Ollama (Local)", BaseUrl = OllamaBaseUrl, DefaultModel = "qwen3:8b" },
             ["openrouter"] = new() { Id = "openrouter", DisplayName = "OpenRouter (Cloud)", BaseUrl = OpenRouterBaseUrl, DefaultModel = "openrouter/free", NeedsApiKey = true, ApiKeyEnvVar = "OPENROUTER_API_KEY", SiteUrlEnvVar = "OPENROUTER_SITE_URL", SiteNameEnvVar = "OPENROUTER_SITE_NAME" },
             ["openai"] = new() { Id = "openai", DisplayName = "OpenAI (Cloud)", BaseUrl = OpenAiBaseUrl, DefaultModel = "gpt-4o", NeedsApiKey = true, ApiKeyEnvVar = "OPENAI_API_KEY" },
+            ["gemini"] = new() { Id = "gemini", DisplayName = "Google Gemini (Cloud)", BaseUrl = GeminiBaseUrl, DefaultModel = "gemini-3.6-flash", NeedsApiKey = true, ApiKeyEnvVar = "GEMINI_API_KEY" },
         };
 
         var configPath = FindConfigJson();

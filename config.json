@@ -24,6 +24,14 @@
       "needsApiKey": true,
       "apiKeyEnvVar": "OPENAI_API_KEY",
       "models": ["gpt-4o", "gpt-4o-mini", "o3-mini", "o4-mini"]
+    },
+    "gemini": {
+      "displayName": "Google Gemini (Cloud)",
+      "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "defaultModel": "gemini-3.6-flash",
+      "needsApiKey": true,
+      "apiKeyEnvVar": "GEMINI_API_KEY",
+      "models": ["gemini-3.6-flash", "gemini-3-flash", "gemini-2.5-flash", "gemini-2.5-pro"]
     }
   }
 }

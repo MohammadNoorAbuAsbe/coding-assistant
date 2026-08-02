@@ -247,7 +247,8 @@ public static class ChatOrchestrator
         accumulatedToolCalls[index] = new ToolCallAccumulator
         {
             Id = toolUpdate.ToolCallId ?? "",
-            FunctionName = toolUpdate.FunctionName ?? ""
+            FunctionName = toolUpdate.FunctionName ?? "",
+            ExtraContent = GetToolCallExtraContent(toolUpdate)
         };
         if (!string.IsNullOrEmpty(toolUpdate.FunctionName))
             DisplayToolName(toolUpdate.FunctionName);
@@ -255,6 +256,10 @@ public static class ChatOrchestrator
 
     private static void UpdateExistingToolCall(StreamingChatToolCallUpdate toolUpdate, ToolCallAccumulator acc)
     {
+        var extraContent = GetToolCallExtraContent(toolUpdate);
+        if (extraContent != null)
+            acc.ExtraContent = extraContent;
+
         if (!string.IsNullOrEmpty(toolUpdate.ToolCallId))
             acc.Id = toolUpdate.ToolCallId;
 
@@ -313,7 +318,12 @@ public static class ChatOrchestrator
         CancellationToken cancellationToken)
     {
         var assistantToolCalls = accumulatedToolCalls.Values
-            .Select(acc => ChatToolCall.CreateFunctionToolCall(acc.Id, acc.FunctionName, BinaryData.FromString(acc.Arguments)))
+            .Select(acc =>
+            {
+                var toolCall = ChatToolCall.CreateFunctionToolCall(acc.Id, acc.FunctionName, BinaryData.FromString(acc.Arguments));
+                AttachToolCallExtraContent(toolCall, acc.ExtraContent);
+                return toolCall;
+            })
             .ToList();
 
         messages.Add(new AssistantChatMessage(assistantToolCalls));
@@ -407,6 +417,32 @@ public static class ChatOrchestrator
         if (text.Length <= maxLen) return text;
         return text[..maxLen] + "…";
     }
+
+    // Gemini 3.x thinking models attach an opaque thought_signature to each tool call
+    // (serialized as tool_calls[].extra_content.google.thought_signature in the OpenAI-compat
+    // layer). The signature must be echoed back on the next request or Gemini rejects the
+    // message history with HTTP 400. The OpenAI SDK preserves unknown fields in JsonPatch;
+    // we lift the raw extra_content JSON from the streaming update and re-attach it to the
+    // rebuilt ChatToolCall so it is replayed verbatim.
+    // Gemini 3.x thinking models attach an opaque thought_signature to each tool call
+    // (tool_calls[].extra_content.google.thought_signature in the OpenAI-compat layer) and
+    // require it to be echoed back, or they reject the history with HTTP 400. The SDK keeps
+    // unknown fields in JsonPatch; lift the raw extra_content JSON from the streaming update
+    // and re-attach it to the rebuilt ChatToolCall so it is replayed verbatim.
+#pragma warning disable SCME0001 // Type is for evaluation purposes only and is subject to change or removal in future updates.
+    private static BinaryData? GetToolCallExtraContent(StreamingChatToolCallUpdate toolUpdate)
+    {
+        return toolUpdate.Patch.Contains("$.extra_content"u8)
+            ? toolUpdate.Patch.GetJson("$.extra_content"u8)
+            : null;
+    }
+
+    private static void AttachToolCallExtraContent(ChatToolCall toolCall, BinaryData? extraContent)
+    {
+        if (extraContent != null)
+            toolCall.Patch.Set("$.extra_content"u8, extraContent);
+    }
+#pragma warning restore SCME0001
 
     private static async Task DisplayErrorAsync(string message)
     {
@@ -511,6 +547,7 @@ public class ToolCallAccumulator
     public string Id { get; set; } = "";
     public string FunctionName { get; set; } = "";
     public string Arguments { get; set; } = "";
+    public BinaryData? ExtraContent { get; set; }
     public bool ArgDisplayed { get; set; }
     public bool ArgsLogged { get; set; }
 }

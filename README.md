@@ -1,10 +1,10 @@
 # Terminal AI Coding Assistant
 
-A terminal-based AI coding assistant that uses LLMs to read, write, edit, search, and execute code through tool calls. Supports **Ollama** (local models), **OpenRouter**, and **OpenAI**.
+A terminal-based AI coding assistant that uses LLMs to read, write, edit, search, and execute code through tool calls. Supports **Ollama** (local models), **OpenRouter**, **OpenAI**, and **Google Gemini** (free tier).
 
 ## Features
 
-- **Multi-provider** — Ollama (local), OpenRouter, and OpenAI (cloud)
+- **Multi-provider** — Ollama (local), OpenRouter, OpenAI, and Google Gemini (cloud)
 - **Interactive menu** — select provider, model, and enter prompts in a loop
 - **13 tools**: Read, Write, Edit (fuzzy match), ApplyPatch (unified diffs, fuzzy), Diff (change previews), Bash, Glob, Grep (ripgrep), WebFetch (URLs), WebSearch (Tavily), Question (interactive), Task (sub-agents), TodoWrite (task lists)
 - **Sub-agents** — delegate complex subtasks to independent sub-agents with their own tool loop
@@ -26,7 +26,7 @@ A terminal-based AI coding assistant that uses LLMs to read, write, edit, search
 ## Prerequisites
 
 - [.NET 10.0](https://dotnet.microsoft.com/download/dotnet/10.0)
-- One of: **Ollama** running locally, **OpenRouter** API key, or **OpenAI** API key
+- One of: **Ollama** running locally, **OpenRouter** API key, **OpenAI** API key, or **Google Gemini** API key (free tier)
 - **ripgrep** (`rg`) for the Grep tool — install via `winget install BurntSushi.ripgrep.MSVC`
 - **Tavily API key** (optional) for the WebSearch tool — get one at [tavily.com](https://tavily.com)
 
@@ -37,6 +37,7 @@ A terminal-based AI coding assistant that uses LLMs to read, write, edit, search
    ```sh
    OPENROUTER_API_KEY=sk-or-v1-...
    OPENAI_API_KEY=sk-...
+   GEMINI_API_KEY=...
    TAVILY_API_KEY=tvly-...
    ```
 3. Run the assistant:
@@ -50,6 +51,7 @@ A terminal-based AI coding assistant that uses LLMs to read, write, edit, search
 - **Ollama**: Install [Ollama](https://ollama.com) and pull a model (`ollama pull qwen3:8b`). No API key needed. Models are auto-discovered via `ollama list`.
 - **OpenRouter**: Get an API key from [OpenRouter](https://openrouter.ai) and set `OPENROUTER_API_KEY`.
 - **OpenAI**: Get an API key from the [Azure Portal](https://portal.azure.com) or [OpenAI](https://platform.openai.com) and set `OPENAI_API_KEY`.
+- **Google Gemini**: Get a free API key from [Google AI Studio](https://aistudio.google.com/apikey) and set `GEMINI_API_KEY`. No credit card required — the free tier covers Flash models (e.g., `gemini-3.6-flash`, `gemini-2.5-flash`). Uses the OpenAI-compatible endpoint, so all tools work.
 
 ### Quick non-interactive mode
 
@@ -65,7 +67,7 @@ dotnet run
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `AI_PROVIDER` | No | `ollama` | Provider to use (`ollama`, `openrouter`, `openai`) |
+| `AI_PROVIDER` | No | `ollama` | Provider to use (`ollama`, `openrouter`, `openai`, `gemini`) |
 | `AI_MODEL` | No | provider default | Model to use (skips model selection menu) |
 | `OPENROUTER_API_KEY` | For OpenRouter | — | API key for OpenRouter |
 | `OPENROUTER_BASE_URL` | No | `https://openrouter.ai/api/v1` | OpenRouter endpoint |
@@ -73,6 +75,8 @@ dotnet run
 | `OPENROUTER_SITE_NAME` | No | — | Sent as `X-Title` header (for OpenRouter rankings) |
 | `OPENAI_API_KEY` | For OpenAI | — | API key for OpenAI |
 | `OPENAI_BASE_URL` | No | `https://api.openai.com/v1` | OpenAI endpoint |
+| `GEMINI_API_KEY` | For Gemini | — | API key for Google Gemini (get at https://aistudio.google.com/apikey) |
+| `GEMINI_BASE_URL` | No | `https://generativelanguage.googleapis.com/v1beta/openai` | Google Gemini OpenAI-compatible endpoint |
 | `OLLAMA_BASE_URL` | No | `http://localhost:11434/v1` | Ollama endpoint |
 | `TAVILY_API_KEY` | For WebSearch | — | API key for Tavily web search (get at https://tavily.com) |
 | `SYSTEM_PROMPT` | No | (built-in) | Override the system prompt |
@@ -104,19 +108,25 @@ You can customize providers in `config.json` (in the project root or any parent 
       "displayName": "OpenRouter (Cloud)",
       "baseUrl": "https://openrouter.ai/api/v1",
       "defaultModel": "openrouter/free",
-      "baseUrl": "https://openrouter.ai/api/v1",
-      "defaultModel": "openrouter/free",
       "needsApiKey": true,
       "apiKeyEnvVar": "OPENROUTER_API_KEY",
       "siteUrlEnvVar": "OPENROUTER_SITE_URL",
       "siteNameEnvVar": "OPENROUTER_SITE_NAME",
       "models": ["openrouter/free"]
+    },
+    "gemini": {
+      "displayName": "Google Gemini (Cloud)",
+      "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "defaultModel": "gemini-3.6-flash",
+      "needsApiKey": true,
+      "apiKeyEnvVar": "GEMINI_API_KEY",
+      "models": ["gemini-3.6-flash", "gemini-3-flash", "gemini-2.5-flash", "gemini-2.5-pro"]
     }
   }
 }
 ```
 
-Available built-in providers: `ollama`, `openrouter`, `openai`. Entries in `config.json` override the built-in defaults. Each provider supports `baseUrl`, `defaultModel`, `needsApiKey`, `apiKeyEnvVar`, and `models`.
+Available built-in providers: `ollama`, `openrouter`, `openai`, `gemini`. Entries in `config.json` override the built-in defaults. Each provider supports `baseUrl`, `defaultModel`, `needsApiKey`, `apiKeyEnvVar`, and `models`.
 
 ## Available Tools
 
@@ -191,7 +201,7 @@ Test projects live under `tests/`. CI (GitHub Actions, `.github/workflows/ci.yml
 ### Interactive Mode
 
 Run `dotnet run` and follow the prompts to:
-1. Select a provider (Ollama, OpenRouter, OpenAI)
+1. Select a provider (Ollama, OpenRouter, OpenAI, Google Gemini)
 2. Select a model
 3. Enter your prompt
 4. The assistant will use tools to complete the task and return a summary
