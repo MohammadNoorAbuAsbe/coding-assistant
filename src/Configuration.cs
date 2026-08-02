@@ -185,6 +185,24 @@ public static class Configuration
         return int.TryParse(value, out var result) ? result : 120000;
     }
 
+    public static bool GetAutoVerify()
+    {
+        var value = Environment.GetEnvironmentVariable("AUTO_VERIFY");
+        if (bool.TryParse(value, out var result)) return result;
+        return true;
+    }
+
+    public static string GetVerifyCommand()
+    {
+        return Environment.GetEnvironmentVariable("VERIFY_COMMAND") ?? "dotnet build --nologo -v q";
+    }
+
+    public static int GetVerifyTimeout()
+    {
+        var value = Environment.GetEnvironmentVariable("VERIFY_TIMEOUT");
+        return int.TryParse(value, out var result) ? result : 120000;
+    }
+
     public static string GetTavilyApiKey()
     {
         return Environment.GetEnvironmentVariable("TAVILY_API_KEY")

@@ -309,6 +309,7 @@ public static class ChatOrchestrator
         using (ConsoleStyler.WithColor(ConsoleColor.Blue))
             await Console.Error.WriteLineAsync("\n— Results —");
         var toolResultMessages = new List<ChatMessage>();
+        bool fileModified = false;
         foreach (var toolCall in assistantToolCalls)
         {
             var result = await ResponseHandler.ProcessSingleToolCallAsync(toolCall, cancellationToken);
@@ -317,11 +318,47 @@ public static class ChatOrchestrator
                 toolResultMessages.Add(result);
                 LogToolResult(toolCall, result);
             }
+
+            if (BuildVerifier.IsFileModifyingFunction(toolCall.FunctionName)
+                && result != null
+                && !ContextManager.ExtractText(result.Content).StartsWith("Error:"))
+            {
+                fileModified = true;
+            }
         }
 
         messages.AddRange(toolResultMessages);
 
+        if (fileModified && Configuration.GetAutoVerify() && !cancellationToken.IsCancellationRequested)
+        {
+            if (BuildVerifier.HasDotnetProject())
+            {
+                using (ConsoleStyler.WithColor(ConsoleColor.Blue))
+                    await Console.Error.WriteLineAsync("\n— Build Verification —");
+                var verifyMessage = await BuildVerifier.RunAsync(cancellationToken);
+                messages.Add(verifyMessage);
+                LogBuildVerification(verifyMessage);
+            }
+            else
+            {
+                using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
+                    await Console.Error.WriteLineAsync("  Build verification skipped: no .sln or .csproj found in workspace (set AUTO_VERIFY=false to disable).");
+            }
+        }
+
         return ContextManager.TruncateMessages(messages, contextWindowSize);
+    }
+
+    private static void LogBuildVerification(ChatMessage message)
+    {
+        if (message is not UserChatMessage userMsg)
+            return;
+
+        string content = ContextManager.ExtractText(userMsg.Content);
+        bool succeeded = content.Contains("Build succeeded");
+        string symbol = succeeded ? "✓" : "✗";
+        using (ConsoleStyler.WithColor(succeeded ? ConsoleColor.Green : ConsoleColor.Red))
+            Console.Error.WriteLine($"  {symbol} Auto-verify: {(succeeded ? "build passed" : "build failed")}");
     }
 
     private static void LogToolResult(ChatToolCall toolCall, ChatMessage result)
