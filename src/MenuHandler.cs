@@ -57,9 +57,19 @@ public static class MenuHandler
 
     public static string GetPrompt()
     {
-        ConsoleStyler.Write("> ", ConsoleColor.Green);
-        var prompt = Console.ReadLine();
-        return prompt?.Trim() ?? "";
+        ConsoleStyler.WriteLine("Enter your prompt (multi-line supported; blank line to submit):", ConsoleColor.DarkGray);
+        var lines = new List<string>();
+        while (true)
+        {
+            ConsoleStyler.Write("> ", ConsoleColor.Green);
+            var line = Console.ReadLine();
+            if (line is null) break;
+            if (lines.Count == 0 && string.IsNullOrWhiteSpace(line)) return "";
+            if (string.IsNullOrWhiteSpace(line)) break;
+            if (lines.Count == 0 && line.TrimStart().StartsWith("/")) return line.Trim();
+            lines.Add(line);
+        }
+        return string.Join(Environment.NewLine, lines).Trim();
     }
 
     private static List<string> DiscoverOllamaModels()
