@@ -51,7 +51,7 @@ public static class ResponseHandler
             ToolHandler.EditFunctionName => Task.FromResult<ToolChatMessage?>(ProcessEditFileCall(toolCall)),
             ToolHandler.ApplyPatchFunctionName => PatchHandler.ProcessApplyPatchCallAsync(toolCall, cancellationToken),
             ToolHandler.DiffFunctionName => PatchHandler.ProcessDiffCallAsync(toolCall, cancellationToken),
-            ToolHandler.BashFunctionName => ProcessBashCallAsync(toolCall, cancellationToken),
+            ToolHandler.PowershellFunctionName => ProcessPowershellCallAsync(toolCall, cancellationToken),
             ToolHandler.GlobFunctionName => Task.FromResult<ToolChatMessage?>(ProcessGlobCall(toolCall)),
             ToolHandler.GrepFunctionName => ProcessGrepCallAsync(toolCall, cancellationToken),
             ToolHandler.WebFetchFunctionName => WebToolHandlers.ProcessWebFetchCallAsync(toolCall, cancellationToken),
@@ -59,7 +59,7 @@ public static class ResponseHandler
             ToolHandler.QuestionFunctionName => Task.FromResult<ToolChatMessage?>(QuestionHandler.ProcessQuestionCall(toolCall)),
             ToolHandler.TaskFunctionName => TaskHandler.ProcessTaskCallAsync(toolCall, cancellationToken),
             ToolHandler.TodoWriteFunctionName => Task.FromResult<ToolChatMessage?>(TodoWriteHandler.ProcessTodoWriteCall(toolCall)),
-            _ => Task.FromResult<ToolChatMessage?>(CreateErrorResult(toolCall, $"Error: unknown function '{toolCall.FunctionName}'. Available functions: {ToolHandler.ReadFunctionName}, {ToolHandler.WriteFunctionName}, {ToolHandler.EditFunctionName}, {ToolHandler.ApplyPatchFunctionName}, {ToolHandler.DiffFunctionName}, {ToolHandler.BashFunctionName}, {ToolHandler.GlobFunctionName}, {ToolHandler.GrepFunctionName}, {ToolHandler.WebFetchFunctionName}, {ToolHandler.WebSearchFunctionName}, {ToolHandler.QuestionFunctionName}, {ToolHandler.TaskFunctionName}, {ToolHandler.TodoWriteFunctionName}."))
+            _ => Task.FromResult<ToolChatMessage?>(CreateErrorResult(toolCall, $"Error: unknown function '{toolCall.FunctionName}'. Available functions: {ToolHandler.ReadFunctionName}, {ToolHandler.WriteFunctionName}, {ToolHandler.EditFunctionName}, {ToolHandler.ApplyPatchFunctionName}, {ToolHandler.DiffFunctionName}, {ToolHandler.PowershellFunctionName}, {ToolHandler.GlobFunctionName}, {ToolHandler.GrepFunctionName}, {ToolHandler.WebFetchFunctionName}, {ToolHandler.WebSearchFunctionName}, {ToolHandler.QuestionFunctionName}, {ToolHandler.TaskFunctionName}, {ToolHandler.TodoWriteFunctionName}."))
         };
         return await task;
     }
@@ -259,19 +259,19 @@ public static class ResponseHandler
             });
     }
 
-    private static async Task<ToolChatMessage?> ProcessBashCallAsync(ChatToolCall toolCall, CancellationToken cancellationToken)
+    private static async Task<ToolChatMessage?> ProcessPowershellCallAsync(ChatToolCall toolCall, CancellationToken cancellationToken)
     {
-        return await ExecuteToolCallAsync<ToolHandler.BashCommandCall>(
+        return await ExecuteToolCallAsync<ToolHandler.PowershellCommandCall>(
             toolCall,
             "Expected format: {\"command\": \"<command>\"}",
             "executing command",
-            args => ExecuteBashCommandAsync(toolCall, args, cancellationToken));
+            args => ExecutePowershellCommandAsync(toolCall, args, cancellationToken));
     }
 
-    private static async Task<ToolChatMessage> ExecuteBashCommandAsync(ChatToolCall toolCall, ToolHandler.BashCommandCall args, CancellationToken cancellationToken)
+    private static async Task<ToolChatMessage> ExecutePowershellCommandAsync(ChatToolCall toolCall, ToolHandler.PowershellCommandCall args, CancellationToken cancellationToken)
     {
         if (args.command == null)
-            return CreateErrorResult(toolCall, "Error: Bash tool missing required parameter 'command'.");
+            return CreateErrorResult(toolCall, "Error: PowerShell tool missing required parameter 'command'.");
 
         bool isWindows = OperatingSystem.IsWindows();
         using var process = new Process

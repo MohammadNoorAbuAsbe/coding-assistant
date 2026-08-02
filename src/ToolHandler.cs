@@ -10,7 +10,7 @@ public static class ToolHandler
     public const string EditFunctionName = "Edit";
     public const string ApplyPatchFunctionName = "ApplyPatch";
     public const string DiffFunctionName = "Diff";
-    public const string BashFunctionName = "Bash";
+    public const string PowershellFunctionName = "PowerShell";
     public const string GlobFunctionName = "Glob";
     public const string GrepFunctionName = "Grep";
     public const string WebFetchFunctionName = "WebFetch";
@@ -20,11 +20,11 @@ public static class ToolHandler
     public const string TodoWriteFunctionName = "TodoWrite";
 
     private const string ReadFunctionDescription = "Read and return the contents of a file";
-    private const string WriteFunctionDescription = "Write content to a file";
+    private const string WriteFunctionDescription = "Write content to a file. Content is written EXACTLY as provided: JSON escape sequences like \n become real newline characters, and no trailing newline is added or removed — the file ends with whatever the content ends with.";
     private const string EditFunctionDescription = "Edit a file by performing a string replacement. Use this to make targeted changes instead of rewriting the entire file. Provide the old text to find and the new text to replace it with. The old text is matched with fuzzy tolerance for leading/trailing whitespace on each line and unicode differences, and as a last resort by line-sequence similarity, so it need not be byte-for-byte exact. Can span multiple lines for larger replacements. On success, the applied diff is returned.";
     private const string ApplyPatchFunctionDescription = "Apply a unified diff (patch) to a file, making multiple changes in one call. The patch must contain one or more hunks in the format '@@ -start,count +start,count @@' followed by lines prefixed with ' ' (context), '-' (removed), and '+' (added). File headers (--- / +++) are optional and must not include timestamps. Header counts and positions are optional hints — a bare '@@' separator is accepted, and hunks are located by content, so counts need not be exact. Matching tolerates leading/trailing whitespace differences. The result reports how each hunk matched and returns the applied diff. Code fences around the patch are ignored. To create a new file, the file must not exist and the patch must contain only '+' lines. Use this instead of repeated Edit calls when changes span multiple hunks.";
     private const string DiffFunctionDescription = "Generate a preview of the changes that would be made to a file, WITHOUT writing anything. Compares the current contents of file_path on disk with new_content and returns a unified diff with @@ hunks. Use this to inspect a change before applying it with the ApplyPatch or Edit tools. Returns 'No differences' if the content is identical.";
-    private const string BashFunctionDescription = "Execute a shell command";
+    private const string PowershellFunctionDescription = "Execute a PowerShell command on Windows (runs via powershell.exe -Command). IMPORTANT: This is PowerShell, NOT bash. Do not use bash syntax: no '&&' (use ';'), no 'ls'/'cat'/'which'/'grep' (use Get-ChildItem, Get-Content, Get-Command, Select-String — or prefer the Read/Grep tools), no '$(...)' shell substitution. The backtick ` is the escape character (e.g. \"`n\" for newline, \"`t\" for tab), double-quoted strings interpolate variables ($var), single-quoted strings are verbatim, and $PSVariable names must not be confused with shell env vars. Work in the current directory via relative paths.";
     private const string GlobFunctionDescription = "Find files by glob pattern. Supports ** (any depth), * (wildcard), ? (single char), and {a,b} (alternation) patterns. Returns full paths of matching files, one per line.";
     private const string GrepFunctionDescription = "Search for patterns in files using ripgrep. Supports regex patterns. Returns matching lines with file paths and line numbers. Respects .gitignore by default, skips binary files.";
     private const string WebFetchFunctionDescription = "Fetch and return the contents of a URL. Converts HTML pages to markdown for readability. Use this to read documentation, check API responses, or fetch web content.";
@@ -67,9 +67,9 @@ public static class ToolHandler
                 (FilePathPropertyName, "The path of the file to compare against (read from disk, not modified)"),
                 ("new_content", "The proposed new content to compare with the current file contents")));
 
-    public static ChatTool CreateBashTool() =>
-        CreateTool(BashFunctionName, BashFunctionDescription, ["command"],
-            StringProperties(("command", "The command to execute")));
+    public static ChatTool CreatePowershellTool() =>
+        CreateTool(PowershellFunctionName, PowershellFunctionDescription, ["command"],
+            StringProperties(("command", "The PowerShell command to execute (runs via powershell.exe -Command). Use PowerShell syntax only — see tool description.")));
 
     public static ChatTool CreateGlobTool() =>
         CreateTool(GlobFunctionName, GlobFunctionDescription, [PatternParameter],
@@ -165,7 +165,7 @@ public static class ToolHandler
                 CreateEditTool(),
                 CreateApplyPatchTool(),
                 CreateDiffTool(),
-                CreateBashTool(),
+                CreatePowershellTool(),
                 CreateGlobTool(),
                 CreateGrepTool(),
                 CreateWebFetchTool(),
@@ -189,7 +189,7 @@ public static class ToolHandler
                 CreateEditTool(),
                 CreateApplyPatchTool(),
                 CreateDiffTool(),
-                CreateBashTool(),
+                CreatePowershellTool(),
                 CreateGlobTool(),
                 CreateGrepTool(),
                 CreateWebFetchTool(),
@@ -257,7 +257,7 @@ public static class ToolHandler
         public required string new_content { get; set; }
     }
 
-    public class BashCommandCall
+    public class PowershellCommandCall
     {
         public required string command { get; set; }
     }

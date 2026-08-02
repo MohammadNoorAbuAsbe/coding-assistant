@@ -38,7 +38,7 @@ public class ToolHandlerTests
         var names = options.Tools.Select(t => t.FunctionName).OrderBy(n => n).ToArray();
         var expected = new[]
         {
-            "ApplyPatch", "Bash", "Diff", "Edit", "Glob", "Grep", "Question", "Read",
+            "ApplyPatch", "Diff", "Edit", "Glob", "Grep", "PowerShell", "Question", "Read",
             "Task", "TodoWrite", "WebFetch", "WebSearch", "Write"
         };
 
@@ -79,7 +79,7 @@ public class ToolHandlerTests
     [InlineData(ToolHandler.EditFunctionName, "file_path", "old_string", "new_string")]
     [InlineData(ToolHandler.ApplyPatchFunctionName, "file_path", "patch")]
     [InlineData(ToolHandler.DiffFunctionName, "file_path", "new_content")]
-    [InlineData(ToolHandler.BashFunctionName, "command")]
+    [InlineData(ToolHandler.PowershellFunctionName, "command")]
     [InlineData(ToolHandler.GlobFunctionName, "pattern")]
     [InlineData(ToolHandler.GrepFunctionName, "pattern")]
     [InlineData(ToolHandler.WebFetchFunctionName, "url")]

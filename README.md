@@ -129,7 +129,7 @@ The assistant has 13 tools that it can call autonomously:
 | **Edit** | Edit a file by string replacement (fuzzy tolerance for whitespace/case differences) |
 | **ApplyPatch** | Apply a unified diff (patch) to a file — multiple hunks in one call, matched with fuzzy whitespace tolerance; can create new files from all-additions patches |
 | **Diff** | Preview the changes that would be made to a file without writing anything (file vs new content) |
-| **Bash** | Execute a shell command |
+| **PowerShell** | Execute a PowerShell command on Windows (`powershell.exe -Command`) — not bash, PowerShell syntax only |
 | **Glob** | Find files by glob pattern (`**`, `*`, `?`, `{a,b}`) |
 | **Grep** | Search file contents with ripgrep (regex, supports include/exclude/case-insensitive) |
 | **WebFetch** | Fetch and return the contents of a URL (converts HTML to markdown) |

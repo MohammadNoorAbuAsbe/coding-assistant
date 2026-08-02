@@ -303,45 +303,45 @@ public class ResponseHandlerToolTests
     }
 
     [Fact]
-    public async Task Bash_Success_ReturnsStdout()
+    public async Task PowerShell_Success_ReturnsStdout()
     {
         using var ws = new TempWorkspace();
 
-        var message = await RunAsync(ToolHandler.BashFunctionName, new { command = "echo hello" });
+        var message = await RunAsync(ToolHandler.PowershellFunctionName, new { command = "echo hello" });
 
         Assert.Equal("hello", ToolText(message!).Trim());
     }
 
     [Fact]
-    public async Task Bash_Failure_ReturnsExitCode()
+    public async Task PowerShell_Failure_ReturnsExitCode()
     {
         using var ws = new TempWorkspace();
 
-        var message = await RunAsync(ToolHandler.BashFunctionName, new { command = "exit 1" });
+        var message = await RunAsync(ToolHandler.PowershellFunctionName, new { command = "exit 1" });
 
         string text = ToolText(message!);
         Assert.Contains("Exit code: 1", text);
     }
 
     [Fact]
-    public async Task Bash_Timeout_ReturnsTimeoutError()
+    public async Task PowerShell_Timeout_ReturnsTimeoutError()
     {
         using var ws = new TempWorkspace();
         ws.SaveEnv("BASH_TIMEOUT");
         Environment.SetEnvironmentVariable("BASH_TIMEOUT", "200");
-        string command = OperatingSystem.IsWindows() ? "Start-Sleep -Seconds 10" : "sleep 10";
+        string command = "Start-Sleep -Seconds 10";
 
-        var message = await RunAsync(ToolHandler.BashFunctionName, new { command });
+        var message = await RunAsync(ToolHandler.PowershellFunctionName, new { command });
 
         Assert.Contains("timed out after", ToolText(message!));
     }
 
     [Fact]
-    public async Task Bash_CommandWithQuotes_Works()
+    public async Task PowerShell_CommandWithQuotes_Works()
     {
         using var ws = new TempWorkspace();
 
-        var message = await RunAsync(ToolHandler.BashFunctionName, new { command = "echo 'hello world'" });
+        var message = await RunAsync(ToolHandler.PowershellFunctionName, new { command = "echo 'hello world'" });
 
         Assert.Equal("hello world", ToolText(message!).Trim());
     }
