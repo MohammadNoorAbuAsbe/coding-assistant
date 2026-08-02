@@ -130,22 +130,34 @@ public static class ChatOrchestrator
         catch (ArgumentOutOfRangeException) when (responseContent == null)
         {
             responseContent = "Error: The API returned an unexpected finish reason (possibly content moderation or a rate limit). Rephrase your request and try again.";
+            await DisplayErrorAsync(responseContent);
         }
         catch (ClientResultException ex) when (responseContent == null)
         {
             responseContent = FormatApiError(ex);
+            await DisplayErrorAsync(responseContent);
         }
         catch (System.IO.IOException) when (responseContent == null)
         {
             responseContent = "Error: The model connection was interrupted (the response ended prematurely). This is usually a provider or network issue — retry the request, possibly with a simpler or shorter prompt.";
+            await DisplayErrorAsync(responseContent);
         }
         catch (OperationCanceledException)
         {
             if (responseContent == null)
+            {
                 responseContent = "The operation was cancelled by the user.";
+                await DisplayErrorAsync(responseContent);
+            }
         }
 
         DrainReasoning(ref reasoningOnLine);
+
+        if (responseContent == null && accumulatedToolCalls.Count == 0)
+        {
+            responseContent = "Error: The model returned an empty response (no content and no tool calls). This often happens with free-tier or rate-limited endpoints — retry, or switch to a different model.";
+            await DisplayErrorAsync(responseContent);
+        }
 
         if (lineBuffer.Length > 0)
         {
@@ -396,9 +408,17 @@ public static class ChatOrchestrator
         return text[..maxLen] + "…";
     }
 
+    private static async Task DisplayErrorAsync(string message)
+    {
+        await Console.Out.WriteLineAsync();
+        using (ConsoleStyler.WithColor(ConsoleColor.Red))
+            await Console.Error.WriteLineAsync(message);
+    }
+
     private static string FormatApiError(ClientResultException ex)
     {
         string detail = "";
+        string? errorMessage = null;
         try
         {
             var raw = ex.GetRawResponse();
@@ -406,14 +426,46 @@ public static class ChatOrchestrator
             {
                 string body = raw.Content.ToString();
                 if (body.Length > 0)
+                {
+                    errorMessage = ExtractJsonString(body, "message");
                     detail = $" Details: {TruncateForDisplay(body, 400)}";
+                }
             }
         }
         catch
         {
         }
 
+        if (ex.Status == 429 || (errorMessage?.Contains("rate limit", StringComparison.OrdinalIgnoreCase) ?? false))
+            return $"Error: The API rate limit was exceeded (HTTP 429).{(errorMessage != null ? $" {errorMessage}" : "")} Wait for the reset window or add credits/upgrade the plan, then retry.";
+
+        if (ex.Status == 401)
+            return $"Error: The API key was rejected (HTTP 401).{(errorMessage != null ? $" {errorMessage}" : "")} Check the API key in your configuration and retry.";
+
+        if (ex.Status == 404)
+            return $"Error: The model or endpoint was not found (HTTP 404).{(errorMessage != null ? $" {errorMessage}" : "")} Verify the model name in your configuration and retry.";
+
         return $"Error: The API request failed with HTTP {ex.Status} (Bad Request).{detail} This is often caused by the model rejecting the message history, tool calls, or content policy. Simplify your approach, retry without tools, or switch to a different model.";
+    }
+
+    private static string? ExtractJsonString(string json, string propertyName)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                doc.RootElement.TryGetProperty("error", out var error) &&
+                error.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                error.TryGetProperty(propertyName, out var value) &&
+                value.ValueKind == System.Text.Json.JsonValueKind.String)
+            {
+                return value.GetString();
+            }
+        }
+        catch
+        {
+        }
+        return null;
     }
 
     private static bool LooksLikeSkippedEdit(string response)
