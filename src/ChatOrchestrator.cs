@@ -290,7 +290,7 @@ public static class ChatOrchestrator
 
     private static string? ExtractFirstStringValue(string json)
     {
-        var match = System.Text.RegularExpressions.Regex.Match(json, @"""[^""]+"":\s*""([^""]+)""");
+        var match = System.Text.RegularExpressions.Regex.Match(json, @"""[^""\\]+"":\s*""((?:[^""\\]|\\.)*)""");
         return match.Success ? match.Groups[1].Value : null;
     }
 

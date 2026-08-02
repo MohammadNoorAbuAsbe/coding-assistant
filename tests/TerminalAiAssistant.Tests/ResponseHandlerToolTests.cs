@@ -345,4 +345,26 @@ public class ResponseHandlerToolTests
 
         Assert.Equal("hello world", ToolText(message!).Trim());
     }
+
+    [Fact]
+    public async Task PowerShell_CommandWithDoubleQuotes_Works()
+    {
+        using var ws = new TempWorkspace();
+
+        var message = await RunAsync(ToolHandler.PowershellFunctionName, new { command = "Write-Output \"hello world\"" });
+
+        Assert.Equal("hello world", ToolText(message!).Trim());
+    }
+
+    [Fact]
+    public async Task PowerShell_CommandWithQuotesAndSubexpression_Works()
+    {
+        using var ws = new TempWorkspace();
+        ws.WriteFile("data.txt", "abc");
+
+        var message = await RunAsync(ToolHandler.PowershellFunctionName,
+            new { command = "$b = [System.IO.File]::ReadAllBytes(\"data.txt\"); Write-Output \"count=$($b.Count)\"" });
+
+        Assert.Contains("count=3", ToolText(message!));
+    }
 }

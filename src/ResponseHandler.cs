@@ -279,7 +279,7 @@ public static class ResponseHandler
             StartInfo = new ProcessStartInfo
             {
                 FileName = isWindows ? "powershell.exe" : "bash",
-                Arguments = $"{(isWindows ? "-Command" : "-c")} \"{args.command}\"",
+                Arguments = $"{(isWindows ? "-Command" : "-c")} \"{args.command.Replace("\"", "\\\"")}\"",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
