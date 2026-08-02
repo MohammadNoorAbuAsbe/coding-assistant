@@ -23,6 +23,8 @@ public static class ChatService
             options.AddPolicy(new OpenRouterHeaderPolicy(siteUrl, siteName), PipelinePosition.PerCall);
         }
 
+        options.AddPolicy(new ReasoningTapPolicy(), PipelinePosition.PerCall);
+
         return new ChatClient(
             model: model,
             credential: new ApiKeyCredential(apiKey),

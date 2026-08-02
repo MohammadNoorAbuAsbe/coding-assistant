@@ -116,12 +116,14 @@ public static class ChatOrchestrator
         string? responseContent = null;
         var lineBuffer = new StringBuilder();
         bool inCodeBlock = false;
+        bool reasoningOnLine = false;
 
         try
         {
             await foreach (var update in ChatService.GetCompletionStreaming(client, messages, options).WithCancellation(cancellationToken))
             {
-                ProcessContentUpdate(update.ContentUpdate, ref responseContent, lineBuffer, ref inCodeBlock);
+                DrainReasoning(ref reasoningOnLine);
+                ProcessContentUpdate(update.ContentUpdate, ref responseContent, lineBuffer, ref inCodeBlock, ref reasoningOnLine);
                 ProcessToolCallUpdates(update.ToolCallUpdates, accumulatedToolCalls);
             }
         }
@@ -143,6 +145,8 @@ public static class ChatOrchestrator
                 responseContent = "The operation was cancelled by the user.";
         }
 
+        DrainReasoning(ref reasoningOnLine);
+
         if (lineBuffer.Length > 0)
         {
             string remaining = lineBuffer.ToString();
@@ -155,13 +159,20 @@ public static class ChatOrchestrator
         return (accumulatedToolCalls, responseContent);
     }
 
-    private static void ProcessContentUpdate(IList<ChatMessageContentPart>? contentUpdate, ref string? responseContent, StringBuilder lineBuffer, ref bool inCodeBlock)
+    private static void ProcessContentUpdate(IList<ChatMessageContentPart>? contentUpdate, ref string? responseContent, StringBuilder lineBuffer, ref bool inCodeBlock, ref bool reasoningOnLine)
     {
         if (contentUpdate == null)
             return;
 
         foreach (var text in contentUpdate.Where(p => !string.IsNullOrEmpty(p.Text)).Select(p => p.Text))
         {
+            if (reasoningOnLine)
+            {
+                reasoningOnLine = false;
+                Console.Error.WriteLine();
+                Console.Error.Flush();
+            }
+
             responseContent = (responseContent ?? "") + text;
             lineBuffer.Append(text);
 
@@ -181,6 +192,26 @@ public static class ChatOrchestrator
                 Console.Out.Flush();
             }
         }
+    }
+
+    private static void DrainReasoning(ref bool reasoningOnLine)
+    {
+        if (!ReasoningTapPolicy.Enabled)
+            return;
+
+        while (ReasoningTapPolicy.Pending.TryDequeue(out string? fragment))
+        {
+            if (!reasoningOnLine)
+            {
+                using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
+                    Console.Error.Write("┆ ");
+                reasoningOnLine = true;
+            }
+            using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
+                Console.Error.Write(fragment);
+        }
+        if (reasoningOnLine)
+            Console.Error.Flush();
     }
 
     private static void ProcessToolCallUpdates(IReadOnlyList<StreamingChatToolCallUpdate>? toolCallUpdates, Dictionary<int, ToolCallAccumulator> accumulatedToolCalls)
