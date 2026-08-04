@@ -35,6 +35,22 @@ public static class ContextManager
         return GetTokenizer().CountTokens(text, considerPreTokenization: false, considerNormalization: false);
     }
 
+    /// <summary>
+    /// Returns the character index in <paramref name="text"/> where the token
+    /// count first exceeds <paramref name="maxTokens"/>, or the full length if
+    /// the text fits within the budget.
+    /// </summary>
+    public static int GetTokenLimitIndex(string text, int maxTokens)
+    {
+        if (string.IsNullOrEmpty(text) || maxTokens <= 0) return 0;
+
+        int current = EstimateTokens(text);
+        if (current <= maxTokens) return text.Length;
+
+        return GetTokenizer().GetIndexByTokenCount(text, maxTokens, out _, out _,
+            considerPreTokenization: false, considerNormalization: false);
+    }
+
     public static int EstimateMessageTokens(ChatMessage message)
     {
         int tokens = 4;
@@ -64,6 +80,18 @@ public static class ContextManager
 
     public static List<ChatMessage> TruncateMessages(List<ChatMessage> messages, int maxTokens)
     {
+        const string summaryMarker = "[Session context (older messages trimmed)]";
+
+        var existingSummary = messages.FirstOrDefault(m =>
+            m is UserChatMessage && ExtractText(m.Content).Contains(summaryMarker));
+
+        var summary = BuildCompactionSummary(messages, existingSummary);
+
+        if (existingSummary != null)
+        {
+            messages = messages.Where(m => m != existingSummary).ToList();
+        }
+
         int totalTokens = 0;
         var result = new List<ChatMessage>();
 
@@ -87,7 +115,102 @@ public static class ContextManager
             result.Insert(systemMessages.Count, otherMessages[i]);
         }
 
+        // Only pin the summary when messages were actually dropped AND it fits
+        // in the leftover budget; otherwise keep the full surviving history.
+        bool dropped = result.Count < systemMessages.Count + otherMessages.Count;
+        if (dropped && summary != null && totalTokens + EstimateMessageTokens(summary) <= maxTokens)
+        {
+            result.Insert(systemMessages.Count, summary);
+        }
+
         return result;
+    }
+
+    private const int CompactionSummaryMaxTokens = 800;
+
+    private static ChatMessage? BuildCompactionSummary(List<ChatMessage> messages, ChatMessage? existingSummary)
+    {
+        var parts = new List<string>();
+        parts.Add("[Session context (older messages trimmed)] — earlier conversation was dropped to fit the context window.");
+
+        string? originalTask = ExtractOriginalTask(messages, existingSummary);
+        if (!string.IsNullOrEmpty(originalTask))
+        {
+            originalTask = originalTask.Length > 800 ? originalTask[..800] + "…" : originalTask;
+            parts.Add($"Original request: {originalTask}");
+        }
+
+        string? todoState = null;
+        string? buildState = null;
+        for (int i = messages.Count - 1; i >= 0; i--)
+        {
+            var msg = messages[i];
+            if (msg is ToolChatMessage toolMsg && msg.Content != null)
+            {
+                string text = ExtractText(toolMsg.Content);
+                if (todoState == null && text.Contains("## Task List"))
+                {
+                    todoState = text;
+                }
+            }
+            else if (msg is UserChatMessage userMsg && msg.Content != null)
+            {
+                string text = ExtractText(userMsg.Content);
+                if (buildState == null && text.StartsWith("Automatic build verification", StringComparison.Ordinal))
+                {
+                    buildState = text;
+                }
+            }
+        }
+
+        if (todoState != null)
+        {
+            parts.Add($"Task list state:\n{todoState}");
+        }
+
+        if (buildState != null)
+        {
+            string verdict = buildState.Split('\n').FirstOrDefault() ?? "";
+            parts.Add($"Build status: {verdict}");
+        }
+
+        string summary = string.Join("\n\n", parts);
+        if (EstimateTokens(summary) > CompactionSummaryMaxTokens)
+        {
+            summary = TruncateToolResult(summary, CompactionSummaryMaxTokens);
+        }
+
+        return new UserChatMessage(summary);
+    }
+
+    private static string? ExtractOriginalTask(List<ChatMessage> messages, ChatMessage? existingSummary)
+    {
+        if (existingSummary != null)
+        {
+            string text = ExtractText(existingSummary.Content);
+            int idx = text.IndexOf("Original request: ", StringComparison.Ordinal);
+            if (idx >= 0)
+            {
+                return text[(idx + "Original request: ".Length)..].Trim();
+            }
+        }
+
+        foreach (var msg in messages)
+        {
+            if (msg is not UserChatMessage userMsg || userMsg.Content == null) continue;
+            string text = ExtractText(userMsg.Content);
+            if (text.Contains("[Session context (older messages trimmed)]"))
+            {
+                continue;
+            }
+            if (text.StartsWith("You described the code changes above but did not apply them"))
+            {
+                continue;
+            }
+            return text.Trim();
+        }
+
+        return null;
     }
 
     public static string TruncateToolResult(string content, int maxTokens)

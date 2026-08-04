@@ -82,28 +82,150 @@ public static class ResponseHandler
             return null;
         }
 
-        try
+        string raw = toolCall.FunctionArguments.ToString();
+
+        T? parsed = TryParseJson<T>(raw);
+        if (parsed != null)
         {
-            return toolCall.FunctionArguments.ToObjectFromJson<T>(JsonOptions);
+            return parsed;
         }
-        catch (JsonException)
+
+        string? decoded = DecodeOnce(raw);
+        if (decoded != null)
         {
-            return TryDecodeDoubleEncoded<T>(toolCall);
+            parsed = TryParseJson<T>(decoded);
+            if (parsed != null)
+            {
+                return parsed;
+            }
         }
+
+        foreach (var repaired in RepairCandidates(raw))
+        {
+            parsed = TryParseJson<T>(repaired);
+            if (parsed != null)
+            {
+                return parsed;
+            }
+
+            string? repairedDecoded = DecodeOnce(repaired);
+            if (repairedDecoded != null)
+            {
+                parsed = TryParseJson<T>(repairedDecoded);
+                if (parsed != null)
+                {
+                    return parsed;
+                }
+            }
+        }
+
+        return null;
     }
 
-    private static T? TryDecodeDoubleEncoded<T>(ChatToolCall toolCall) where T : class
+    private static T? TryParseJson<T>(string json) where T : class
     {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
         try
         {
-            string raw = toolCall.FunctionArguments.ToString();
-            string decoded = JsonSerializer.Deserialize<string>(raw) ?? "";
-            return JsonSerializer.Deserialize<T>(decoded, JsonOptions);
+            return JsonSerializer.Deserialize<T>(json, JsonOptions);
         }
         catch (JsonException)
         {
             return null;
         }
+    }
+
+    private static string? DecodeOnce(string raw)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<string>(raw);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static IEnumerable<string> RepairCandidates(string raw)
+    {
+        string candidate = raw.Trim();
+
+        if (candidate.StartsWith("```", StringComparison.Ordinal))
+        {
+            candidate = candidate[3..].Trim();
+            if (candidate.StartsWith("json", StringComparison.OrdinalIgnoreCase))
+            {
+                candidate = candidate[4..].TrimStart();
+            }
+            if (candidate.EndsWith("```", StringComparison.Ordinal))
+            {
+                candidate = candidate[..^3].Trim();
+            }
+        }
+
+        int start = candidate.IndexOf('{');
+        if (start < 0)
+        {
+            yield break;
+        }
+
+        int end = candidate.LastIndexOf('}');
+        if (end < start) end = candidate.Length - 1;
+
+        string json = candidate[start..(end + 1)];
+
+        // Small models often emit single-quoted strings; only rewrite when the
+        // payload contains no double quotes at all, so real strings are not damaged.
+        if (!json.Contains('"'))
+        {
+            json = json.Replace('\'', '"');
+        }
+
+        json = FixUnquotedKeys(json);
+        json = FixTrailingCommas(json);
+        yield return json;
+
+        // Progressive repair for truncated output: drop trailing key/value
+        // segments until the remaining object parses (or the braces balance).
+        string progressive = json;
+        for (int attempt = 0; attempt < 10; attempt++)
+        {
+            progressive = BalanceBraces(progressive);
+            yield return progressive;
+
+            int lastComma = progressive.LastIndexOf(',');
+            if (lastComma <= 0) break;
+            progressive = progressive[..lastComma].TrimEnd();
+        }
+    }
+
+    private static string FixUnquotedKeys(string json)
+    {
+        return System.Text.RegularExpressions.Regex.Replace(
+            json,
+            @"([\{,])\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*:",
+            "$1\"$2\":");
+    }
+
+    private static string FixTrailingCommas(string json)
+    {
+        return System.Text.RegularExpressions.Regex.Replace(json, @",(\s*[}\]])", "$1");
+    }
+
+    private static string BalanceBraces(string json)
+    {
+        int open = 0;
+        foreach (char c in json)
+        {
+            if (c == '{') open++;
+            else if (c == '}') open--;
+        }
+        return open > 0 ? json + new string('}', open) : json;
     }
 
     internal static string RepairContentEncoding(string value)
@@ -164,7 +286,7 @@ public static class ResponseHandler
     {
         return ExecuteToolCall<ToolHandler.ReadFileCall>(
             toolCall,
-            "Expected format: {\"file_path\": \"<path>\"}",
+            "Expected format: {\"file_path\": \"<path>\", \"start_line\": \"<int>\", \"end_line\": \"<int>\"}",
             "reading file",
             args =>
             {
@@ -176,16 +298,40 @@ public static class ResponseHandler
                 string safePath = PathValidator.ValidatePath(args.file_path, Environment.CurrentDirectory);
 
                 string[] lines = System.IO.File.ReadAllLines(safePath);
+                int startLine = ParseLineNumber(args.start_line, 1);
+                if (startLine < 1) startLine = 1;
+                if (startLine > lines.Length) startLine = lines.Length + 1;
+                int endLine = ParseLineNumber(args.end_line, lines.Length);
+                if (endLine > lines.Length) endLine = lines.Length;
+                if (endLine < startLine) endLine = startLine;
+
                 var sb = new System.Text.StringBuilder();
-                for (int i = 0; i < lines.Length; i++)
+                for (int i = startLine - 1; i < endLine && i < lines.Length; i++)
                 {
                     sb.AppendLine($"{i + 1}: {lines[i]}");
                 }
+
                 string fileText = sb.ToString();
                 int maxTokens = Configuration.GetMaxToolResultTokens();
-                fileText = ContextManager.TruncateToolResult(fileText, maxTokens);
+                if (ContextManager.EstimateTokens(fileText) > maxTokens)
+                {
+                    int idx = ContextManager.GetTokenLimitIndex(fileText, maxTokens);
+                    int cut = idx > 0 ? fileText.LastIndexOf('\n', idx - 1) : -1;
+                    if (cut < 0) cut = Math.Max(0, idx);
+                    string shown = fileText[..cut];
+                    int shownLines = shown.Count(c => c == '\n');
+                    int lastShown = startLine + shownLines;
+                    if (lastShown > endLine) lastShown = endLine;
+                    fileText = shown + $"\n\n... [truncated: showing lines {startLine}-{lastShown} of {lines.Length}. Use Read with start_line/end_line to fetch the remaining lines in ranges.]";
+                }
+
                 return new ToolChatMessage(toolCall.Id, fileText);
             });
+    }
+
+    private static int ParseLineNumber(string? value, int fallback)
+    {
+        return int.TryParse(value, out int n) ? n : fallback;
     }
 
     private static ToolChatMessage? ProcessWriteFileCall(ChatToolCall toolCall)

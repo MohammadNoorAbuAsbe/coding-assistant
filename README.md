@@ -83,8 +83,12 @@ dotnet run
 | `MAX_ITERATIONS` | No | unlimited | Optional cap on tool-call iterations; unset = run until done |
 | `MAX_SUB_AGENT_DEPTH` | No | `3` | Max nested sub-agent depth |
 | `CONTEXT_WINDOW_SIZE` | No | `32768` (local) / `128000` (cloud) | Max tokens for context window |
-| `MAX_TOOL_RESULT_TOKENS` | No | 40% of context window | Max tokens per tool result (auto-truncated) |
+| `MAX_TOOL_RESULT_TOKENS` | No | 20% of context window (local) / 40% (cloud) | Max tokens per tool result (auto-truncated; local models get a tighter budget so they read in focused ranges) |
+| `MODEL_TEMPERATURE` | No | `0` | Sampling temperature; 0 gives the most deterministic, reliable tool calls (small models benefit the most) |
 | `BASH_TIMEOUT` | No | `120000` (ms) | Timeout for Bash tool commands |
+| `AUTO_VERIFY` | No | `false` (local) / `true` (cloud) | Auto-run the verify command after file-modifying tool calls; off by default for local models to keep the agent loop fast |
+| `VERIFY_COMMAND` | No | `dotnet build --nologo -v q` | Command used by auto-verification |
+| `VERIFY_TIMEOUT` | No | `120000` (ms) | Timeout for the verify command |
 | `UNDO_HISTORY_LIMIT` | No | `100` | Max file changes kept in the undo journal |
 | `NO_COLOR` | No | — | Set to any value to disable colored console output |
 
@@ -135,7 +139,7 @@ The assistant has 13 tools that it can call autonomously:
 
 | Tool | Description |
 |------|-------------|
-| **Read** | Read a file (returns content with line numbers) |
+| **Read** | Read a file (returns content with line numbers; optional `start_line`/`end_line` to read only a line range — large files are auto-truncated and the model is told to fetch remaining lines in ranges) |
 | **Write** | Write content to a file (auto-creates directories) |
 | **Edit** | Edit a file by string replacement (fuzzy tolerance for whitespace/case differences) |
 | **ApplyPatch** | Apply a unified diff (patch) to a file — multiple hunks in one call, matched with fuzzy whitespace tolerance; can create new files from all-additions patches |
@@ -270,6 +274,7 @@ Each provider in `config.json` can have:
 
 The assistant automatically manages context to prevent token overflow:
 - Messages are truncated when they exceed the context window
+- When older messages are dropped, a compact session summary (original request, current task list, last build status) is pinned in their place so the model keeps working context on long tasks
 - Tool results are truncated to a configurable percentage of the context window
 - System prompts are preserved when possible
 

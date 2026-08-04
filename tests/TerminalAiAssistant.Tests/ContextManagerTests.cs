@@ -150,6 +150,86 @@ public class ContextManagerTests
     }
 
     [Fact]
+    public void TruncateMessages_OverLimitWithSlack_InsertsCompactionSummary()
+    {
+        var messages = new List<ChatMessage>
+        {
+            new SystemChatMessage("system message"),
+            new UserChatMessage("original task text"),
+            new UserChatMessage(string.Join(" ", Enumerable.Repeat("word", 1000))),
+            new UserChatMessage("newest message")
+        };
+
+        int systemTokens = ContextManager.EstimateMessageTokens(messages[0]);
+        int newestTokens = ContextManager.EstimateMessageTokens(messages[3]);
+        int limit = systemTokens + newestTokens + 500;
+
+        var result = ContextManager.TruncateMessages(messages, limit);
+
+        Assert.Equal(3, result.Count);
+        Assert.IsType<SystemChatMessage>(result[0]);
+        string summaryText = ContextManager.ExtractText(result[1].Content!);
+        Assert.Contains("[Session context (older messages trimmed)]", summaryText);
+        Assert.Contains("Original request: original task text", summaryText);
+        Assert.Equal("newest message", Assert.IsType<UserChatMessage>(result[2]).Content?[0].Text);
+    }
+
+    [Fact]
+    public void TruncateMessages_SummaryIncludesTodoListAndBuildStatus()
+    {
+        var messages = new List<ChatMessage>
+        {
+            new SystemChatMessage("system message"),
+            new UserChatMessage("original task text"),
+            new ToolChatMessage("call-1", "## Task List\n\n**pending** (1):\n  · Fix bug\n\nProgress: 0/1 tasks completed"),
+            new UserChatMessage("Automatic build verification (dotnet build --nologo -v q):\nBuild succeeded. Your changes compile."),
+            new UserChatMessage(string.Join(" ", Enumerable.Repeat("word", 1000))),
+            new UserChatMessage("newest message")
+        };
+
+        int systemTokens = ContextManager.EstimateMessageTokens(messages[0]);
+        int newestTokens = ContextManager.EstimateMessageTokens(messages[5]);
+        int limit = systemTokens + newestTokens + 500;
+
+        var result = ContextManager.TruncateMessages(messages, limit);
+
+        Assert.Equal(3, result.Count);
+        string summaryText = ContextManager.ExtractText(result[1].Content!);
+        Assert.Contains("Task list state", summaryText);
+        Assert.Contains("Fix bug", summaryText);
+        Assert.Contains("Build status: Automatic build verification", summaryText);
+    }
+
+    [Fact]
+    public void TruncateMessages_SecondCall_ReplacesSummaryInsteadOfStacking()
+    {
+        var messages = new List<ChatMessage>
+        {
+            new SystemChatMessage("system message"),
+            new UserChatMessage("original task text"),
+            new UserChatMessage(string.Join(" ", Enumerable.Repeat("word", 1000))),
+            new UserChatMessage("newest message")
+        };
+
+        int systemTokens = ContextManager.EstimateMessageTokens(messages[0]);
+        int newestTokens = ContextManager.EstimateMessageTokens(messages[3]);
+        int limit = systemTokens + newestTokens + 500;
+
+        var first = ContextManager.TruncateMessages(messages, limit);
+        var secondList = new List<ChatMessage>(first)
+        {
+            new UserChatMessage(string.Join(" ", Enumerable.Repeat("word", 1000)))
+        };
+        var second = ContextManager.TruncateMessages(secondList, limit);
+
+        int summaries = second.Count(m => m is UserChatMessage u &&
+            ContextManager.ExtractText(u.Content!).Contains("[Session context (older messages trimmed)]"));
+        Assert.Equal(1, summaries);
+        string summaryText = ContextManager.ExtractText(second[1].Content!);
+        Assert.Contains("Original request: original task text", summaryText);
+    }
+
+    [Fact]
     public void TruncateMessages_Empty_ReturnsEmpty()
     {
         var result = ContextManager.TruncateMessages(new List<ChatMessage>(), 1000);

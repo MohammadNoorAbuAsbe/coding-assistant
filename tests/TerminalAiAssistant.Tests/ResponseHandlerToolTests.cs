@@ -47,6 +47,53 @@ public class ResponseHandlerToolTests
     }
 
     [Fact]
+    public async Task Read_LineRange_ReturnsOnlyRequestedLines()
+    {
+        using var ws = new TempWorkspace();
+        ws.WriteFile("file.txt", string.Join("\n", Enumerable.Range(1, 20).Select(i => $"line {i}")) + "\n");
+
+        var message = await RunAsync(ToolHandler.ReadFunctionName, new { file_path = "file.txt", start_line = "5", end_line = "7" });
+
+        string text = ToolText(message!);
+        Assert.Contains("5: line 5", text);
+        Assert.Contains("7: line 7", text);
+        Assert.DoesNotContain("4: line 4", text);
+        Assert.DoesNotContain("8: line 8", text);
+    }
+
+    [Fact]
+    public async Task Read_InvalidLineNumbers_FallBackToFileBounds()
+    {
+        using var ws = new TempWorkspace();
+        ws.WriteFile("file.txt", "one\ntwo\nthree\n");
+
+        var message = await RunAsync(ToolHandler.ReadFunctionName, new { file_path = "file.txt", start_line = "abc", end_line = "999" });
+
+        string text = ToolText(message!);
+        Assert.Contains("1: one", text);
+        Assert.Contains("3: three", text);
+    }
+
+    [Fact]
+    public async Task Read_LargeFile_TruncatesAndSuggestsRanges()
+    {
+        using var ws = new TempWorkspace();
+        ws.SaveEnv("MAX_TOOL_RESULT_TOKENS");
+        ws.SaveEnv("CONTEXT_WINDOW_SIZE");
+        Environment.SetEnvironmentVariable("CONTEXT_WINDOW_SIZE", "1000");
+        Environment.SetEnvironmentVariable("MAX_TOOL_RESULT_TOKENS", null);
+        Configuration.SetProvider("ollama");
+
+        ws.WriteFile("big.txt", string.Join("\n", Enumerable.Range(1, 500).Select(i => $"line number {i} with some extra words here")) + "\n");
+
+        var message = await RunAsync(ToolHandler.ReadFunctionName, new { file_path = "big.txt" });
+
+        string text = ToolText(message!);
+        Assert.Contains("[truncated: showing lines 1-", text);
+        Assert.Contains("Use Read with start_line/end_line", text);
+    }
+
+    [Fact]
     public async Task Read_PathOutsideWorkspace_ReturnsError()
     {
         using var ws = new TempWorkspace();
@@ -240,6 +287,45 @@ public class ResponseHandlerToolTests
         var message = await ResponseHandler.ProcessSingleToolCallAsync(toolCall);
 
         Assert.Contains("called with invalid arguments", ToolText(message!));
+    }
+
+    [Fact]
+    public async Task Write_ArgsInCodeFences_AreRepaired()
+    {
+        using var ws = new TempWorkspace();
+
+        string raw = "```json\n{\"file_path\": \"f.txt\", \"content\": \"hello\"}\n```";
+        var toolCall = ToolCallFactory.Create(ToolHandler.WriteFunctionName, raw);
+        var message = await ResponseHandler.ProcessSingleToolCallAsync(toolCall);
+
+        Assert.Contains("Successfully wrote content to f.txt", ToolText(message!));
+        Assert.Equal("hello", ws.ReadFile("f.txt"));
+    }
+
+    [Fact]
+    public async Task Write_SingleQuotedUnquotedKeys_AreRepaired()
+    {
+        using var ws = new TempWorkspace();
+
+        string raw = "{file_path: 'f.txt', content: 'hello',}";
+        var toolCall = ToolCallFactory.Create(ToolHandler.WriteFunctionName, raw);
+        var message = await ResponseHandler.ProcessSingleToolCallAsync(toolCall);
+
+        Assert.Contains("Successfully wrote content to f.txt", ToolText(message!));
+        Assert.Equal("hello", ws.ReadFile("f.txt"));
+    }
+
+    [Fact]
+    public async Task Read_TruncatedArgs_ProgressiveRepairSalvages()
+    {
+        using var ws = new TempWorkspace();
+        ws.WriteFile("f.txt", "hello\nworld\n");
+
+        string raw = "{\"file_path\": \"f.txt\", \"start_line\": \"2";
+        var toolCall = ToolCallFactory.Create(ToolHandler.ReadFunctionName, raw);
+        var message = await ResponseHandler.ProcessSingleToolCallAsync(toolCall);
+
+        Assert.Contains("1: hello", ToolText(message!));
     }
 
     [Fact]

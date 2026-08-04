@@ -54,10 +54,23 @@ public class BuildVerifierTests
     }
 
     [Fact]
-    public void GetAutoVerify_DefaultsToTrue()
+    public void GetAutoVerify_DefaultsOffForLocal()
     {
         using var ws = new TempWorkspace();
         ws.SaveEnv("AUTO_VERIFY");
+        Configuration.LoadProviderConfigs();
+        Configuration.SetProvider("ollama");
+
+        Assert.False(Configuration.GetAutoVerify());
+    }
+
+    [Fact]
+    public void GetAutoVerify_DefaultsOnForCloud()
+    {
+        using var ws = new TempWorkspace();
+        ws.SaveEnv("AUTO_VERIFY");
+        Configuration.LoadProviderConfigs();
+        Configuration.SetProvider("openai");
 
         Assert.True(Configuration.GetAutoVerify());
     }
@@ -67,6 +80,8 @@ public class BuildVerifierTests
     {
         using var ws = new TempWorkspace();
         ws.SaveEnv("AUTO_VERIFY");
+        Configuration.LoadProviderConfigs();
+        Configuration.SetProvider("openai");
         Environment.SetEnvironmentVariable("AUTO_VERIFY", "false");
 
         Assert.False(Configuration.GetAutoVerify());

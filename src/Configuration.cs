@@ -243,7 +243,15 @@ public static class Configuration
     {
         var value = Environment.GetEnvironmentVariable("MAX_TOOL_RESULT_TOKENS");
         if (int.TryParse(value, out var result)) return result;
-        return (int)(GetContextWindowSize() * 0.4);
+        // Local models (Ollama) get a tighter budget: large blobs overwhelm
+        // small models' attention, so they should read in focused ranges.
+        return (int)(GetContextWindowSize() * (GetProvider() == OllamaName ? 0.2 : 0.4));
+    }
+
+    public static float GetTemperature()
+    {
+        var value = Environment.GetEnvironmentVariable("MODEL_TEMPERATURE");
+        return float.TryParse(value, out var result) ? result : 0f;
     }
 
     public static int GetBashTimeout()
@@ -262,7 +270,9 @@ public static class Configuration
     {
         var value = Environment.GetEnvironmentVariable("AUTO_VERIFY");
         if (bool.TryParse(value, out var result)) return result;
-        return true;
+        // Off by default for local models: each verify rebuilds the project,
+        // which makes the agent loop slow on small/slow hardware.
+        return GetProvider() != OllamaName;
     }
 
     public static string GetVerifyCommand()

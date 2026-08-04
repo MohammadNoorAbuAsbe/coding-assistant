@@ -220,13 +220,29 @@ public class ConfigurationTests
     }
 
     [Fact]
-    public void GetMaxToolResultTokens_DefaultIsFortyPercent()
+    public void GetMaxToolResultTokens_DefaultLocalTwentyPercent()
     {
         using var ws = new TempWorkspace();
         ws.SaveEnv("CONTEXT_WINDOW_SIZE");
         ws.SaveEnv("MAX_TOOL_RESULT_TOKENS");
         SetEnv("MAX_TOOL_RESULT_TOKENS", null);
         SetEnv("CONTEXT_WINDOW_SIZE", "10000");
+        Configuration.LoadProviderConfigs();
+        Configuration.SetProvider("ollama");
+
+        Assert.Equal(2000, Configuration.GetMaxToolResultTokens());
+    }
+
+    [Fact]
+    public void GetMaxToolResultTokens_DefaultCloudFortyPercent()
+    {
+        using var ws = new TempWorkspace();
+        ws.SaveEnv("CONTEXT_WINDOW_SIZE");
+        ws.SaveEnv("MAX_TOOL_RESULT_TOKENS");
+        SetEnv("MAX_TOOL_RESULT_TOKENS", null);
+        SetEnv("CONTEXT_WINDOW_SIZE", "10000");
+        Configuration.LoadProviderConfigs();
+        Configuration.SetProvider("openai");
 
         Assert.Equal(4000, Configuration.GetMaxToolResultTokens());
     }
@@ -239,6 +255,26 @@ public class ConfigurationTests
         SetEnv("MAX_TOOL_RESULT_TOKENS", "123");
 
         Assert.Equal(123, Configuration.GetMaxToolResultTokens());
+    }
+
+    [Fact]
+    public void GetTemperature_DefaultZero()
+    {
+        using var ws = new TempWorkspace();
+        ws.SaveEnv("MODEL_TEMPERATURE");
+        SetEnv("MODEL_TEMPERATURE", null);
+
+        Assert.Equal(0f, Configuration.GetTemperature());
+    }
+
+    [Fact]
+    public void GetTemperature_EnvOverride()
+    {
+        using var ws = new TempWorkspace();
+        ws.SaveEnv("MODEL_TEMPERATURE");
+        SetEnv("MODEL_TEMPERATURE", "0.7");
+
+        Assert.Equal(0.7f, Configuration.GetTemperature());
     }
 
     [Fact]

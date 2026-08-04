@@ -19,7 +19,7 @@ public static class ToolHandler
     public const string TaskFunctionName = "Task";
     public const string TodoWriteFunctionName = "TodoWrite";
 
-    private const string ReadFunctionDescription = "Read and return the contents of a file";
+    private const string ReadFunctionDescription = "Read and return the contents of a file. By default the whole file is returned (truncated to the token budget); use optional start_line/end_line to read only a line range and avoid flooding the context window.";
     private const string WriteFunctionDescription = "Write content to a file. Content is written EXACTLY as provided: JSON escape sequences like \n become real newline characters, and no trailing newline is added or removed — the file ends with whatever the content ends with. IMPORTANT: do not double-escape. In the content parameter, a plain quote is written as just a quote, and a backslash as just a backslash. Only newlines need to be escaped (as \n). Writing \\\" or \\\\n produces literally corrupted output.";
     private const string EditFunctionDescription = "Edit a file by performing a string replacement. Use this to make targeted changes instead of rewriting the entire file. Provide the old text to find and the new text to replace it with. The old text is matched with fuzzy tolerance for leading/trailing whitespace on each line and unicode differences, and as a last resort by line-sequence similarity, so it need not be byte-for-byte exact. Can span multiple lines for larger replacements. On success, the applied diff is returned. IMPORTANT: do not double-escape. Write quotes and backslashes plainly in old_string/new_string; only newlines are escaped (as \n). Never wrap replacement text in extra quotes or JSON punctuation — write exactly the characters that should appear in the file.";
     private const string ApplyPatchFunctionDescription = "Apply a unified diff (patch) to a file, making multiple changes in one call. The patch must contain one or more hunks in the format '@@ -start,count +start,count @@' followed by lines prefixed with ' ' (context), '-' (removed), and '+' (added). File headers (--- / +++) are optional and must not include timestamps. Header counts and positions are optional hints — a bare '@@' separator is accepted, and hunks are located by content, so counts need not be exact. Matching tolerates leading/trailing whitespace differences. The result reports how each hunk matched and returns the applied diff. Code fences around the patch are ignored. To create a new file, the file must not exist and the patch must contain only '+' lines. Use this instead of repeated Edit calls when changes span multiple hunks. IMPORTANT: do not double-escape. Write quotes and backslashes plainly; only newlines are escaped (as \n). Do not wrap the patch or its lines in extra quotes.";
@@ -40,7 +40,10 @@ public static class ToolHandler
 
     public static ChatTool CreateReadTool() =>
         CreateTool(ReadFunctionName, ReadFunctionDescription, [FilePathPropertyName],
-            StringProperties((FilePathPropertyName, "The path to the file to read")));
+            StringProperties(
+                (FilePathPropertyName, "The path to the file to read"),
+                ("start_line", "First line to read (1-based, optional; default 1). Use with end_line to read a specific range."),
+                ("end_line", "Last line to read (1-based, inclusive, optional; default last line).")));
 
     public static ChatTool CreateWriteTool() =>
         CreateTool(WriteFunctionName, WriteFunctionDescription, [FilePathPropertyName, ContentParameter],
@@ -157,6 +160,8 @@ public static class ToolHandler
     {
         return new ChatCompletionOptions
         {
+            Temperature = Configuration.GetTemperature(),
+            AllowParallelToolCalls = false,
             MaxOutputTokenCount = 16384,
             Tools =
             {
@@ -181,6 +186,8 @@ public static class ToolHandler
     {
         return new ChatCompletionOptions
         {
+            Temperature = Configuration.GetTemperature(),
+            AllowParallelToolCalls = false,
             MaxOutputTokenCount = 16384,
             Tools =
             {
@@ -230,6 +237,8 @@ public static class ToolHandler
     public class ReadFileCall
     {
         public required string file_path { get; set; }
+        public string? start_line { get; set; }
+        public string? end_line { get; set; }
     }
 
     public class WriteFileCall

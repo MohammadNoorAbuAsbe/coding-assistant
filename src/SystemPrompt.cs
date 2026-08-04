@@ -3,7 +3,7 @@ namespace TerminalAiAssistant;
 public static class SystemPrompt
 {
     private const string ToolDescriptions = @"
-1. **Read** — Read a file. Shows content with line numbers like ""1: code"". Parameters: {""file_path"": ""<path>""}
+1. **Read** — Read a file. Shows content with line numbers like ""1: code"". Parameters: {""file_path"": ""<path>""}. Optional: ""start_line"", ""end_line"" — read only a line range (e.g., to fetch the rest of a truncated file).
 2. **Write** — Write a file (creates dirs automatically). Parameters: {""file_path"": ""<path>"", ""content"": ""<content>""}
 3. **Edit** — Edit a file by string replacement. The old text is matched with fuzzy tolerance for leading/trailing whitespace on each line and unicode differences, and as a last resort by line-sequence similarity, so it need not be byte-for-byte exact. Can span multiple lines. On success, the applied diff is returned. Parameters: {""file_path"": ""<path>"", ""old_string"": ""<text>"", ""new_string"": ""<replacement text>""}
 4. **ApplyPatch** — Apply a unified diff (patch) to a file, making many changes in one call. Hunks: @@ -start,count +start,count @@ followed by lines prefixed with "" "" (context), ""-"" (removed), and ""+"" (added). No timestamps in headers. Headers are optional hints: a bare ""@@"" separator is accepted, and matching is done by content, so counts and positions do not need to be exact. Hunks match fuzzily (leading/trailing whitespace differences tolerated). The result reports how each hunk matched and returns the applied diff. Code fences around the patch are ignored. To create a new file, the file must not exist and the patch must contain only ""+"" lines. Parameters: {""file_path"": ""<path>"", ""patch"": ""<unified diff>""}.
@@ -16,6 +16,23 @@ public static class SystemPrompt
 11. **WebSearch** — Search the web for current information using Tavily. Parameters: {""query"": ""<query>""} (required). Optional: ""max_results"" (1-10), ""search_depth"" (""basic""/""advanced"").
 12. **Task** — Launch a sub-agent for complex subtasks. The sub-agent runs independently with all tools and returns its result. Use for multi-step work that can be delegated. Parameters: {""description"": ""<task>""} (required). Optional: ""subagent_type"".
 13. **TodoWrite** — Create and manage a structured task list. Call at the start of complex tasks to plan, and update as you complete steps. Parameters: {""todos"": [{""content"": ""..."", ""status"": ""..."", ""priority"": ""...""}]}.";
+
+    private const string ShortToolList = @"
+- **Read** — read a file's contents (optional start_line/end_line for line ranges)
+- **Write** — write a new file
+- **Edit** — targeted string replacement in a file (fuzzy matching)
+- **ApplyPatch** — apply a multi-hunk unified diff in one call
+- **Diff** — preview changes without writing
+- **PowerShell** — run a PowerShell command (NOT bash syntax)
+- **Glob** — find files by glob pattern
+- **Grep** — regex-search file contents (ripgrep)
+- **WebFetch** — fetch a URL's contents
+- **WebSearch** — search the web (Tavily)
+- **Question** — ask the user a multiple-choice question
+- **Task** — launch a sub-agent
+- **TodoWrite** — maintain a structured task list
+
+Full parameter details are in the tool schemas — read them carefully before calling a tool. Keep tool results small: use Grep to locate code and Read with line ranges instead of dumping whole files.";
 
     private const string EditToolChoiceSection = @"
 ## Choosing the Right Edit Tool
@@ -55,7 +72,7 @@ You are a coding assistant with full access to the current workspace directory. 
 You are in an agent loop. Each iteration you can call one or more tools. You will receive the results and can make more calls. Keep going until the task is done, then respond with a summary.
 
 ## Available Tools
-" + ToolDescriptions + @"
+" + ShortToolList + @"
 " + AskUserSection + @"
 " + ApplyEditsSection + @"
 " + EditToolChoiceSection + @"
