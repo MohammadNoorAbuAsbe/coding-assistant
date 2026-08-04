@@ -74,6 +74,8 @@ public static class ChatOrchestrator
         int contextWindowSize,
         CancellationToken cancellationToken)
     {
+        int skippedEditNudges = 0;
+
         for (int iteration = 0; maxIterations == null || iteration < maxIterations; iteration++)
         {
             if (cancellationToken.IsCancellationRequested)
@@ -96,8 +98,13 @@ public static class ChatOrchestrator
                 {
                     Console.WriteLine();
 
-                    if (LooksLikeSkippedEdit(responseContent) && (maxIterations == null || iteration < maxIterations - 1) && !UserRequestedPreviewOnly(messages))
+                    if (LooksLikeSkippedEdit(responseContent)
+                        && (maxIterations == null || iteration < maxIterations - 1)
+                        && !UserRequestedPreviewOnly(messages)
+                        && skippedEditNudges < MaxSkippedEditNudges
+                        && !PreviousTurnHadToolCalls(messages))
                     {
+                        skippedEditNudges++;
                         messages.Add(new AssistantChatMessage(responseContent));
                         messages.Add(new UserChatMessage("You described the code changes above but did not apply them. Execute the necessary Edit or ApplyPatch tool calls now to actually make these changes to the files. Do not repeat the descriptions — just apply them."));
                         continue;
@@ -539,10 +546,29 @@ public static class ChatOrchestrator
                 return value.GetString();
             }
         }
-        catch
+        catch (System.Exception)
         {
+            // Log the exception or handle it appropriately if needed.
         }
         return null;
+    }
+
+    private const int MaxSkippedEditNudges = 2;
+
+    // Only nudge when the model's previous turn was text-only. If it already
+    // executed tool calls, a fenced before/after block in the summary is a
+    // legitimate diff display — not a skipped edit — and nudging it would put
+    // the model in an unbreakable loop.
+    private static bool PreviousTurnHadToolCalls(List<ChatMessage> messages)
+    {
+        for (int i = messages.Count - 1; i >= 0; i--)
+        {
+            if (messages[i] is AssistantChatMessage assistant)
+            {
+                return assistant.ToolCalls != null && assistant.ToolCalls.Count > 0;
+            }
+        }
+        return false;
     }
 
     private static bool LooksLikeSkippedEdit(string response)
