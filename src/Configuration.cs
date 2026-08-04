@@ -252,6 +252,12 @@ public static class Configuration
         return int.TryParse(value, out var result) ? result : 120000;
     }
 
+    public static int GetUndoHistoryLimit()
+    {
+        var value = Environment.GetEnvironmentVariable("UNDO_HISTORY_LIMIT");
+        return int.TryParse(value, out var result) && result > 0 ? result : 100;
+    }
+
     public static bool GetAutoVerify()
     {
         var value = Environment.GetEnvironmentVariable("AUTO_VERIFY");

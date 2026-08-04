@@ -85,6 +85,7 @@ internal static partial class PatchHandler
             .Select(TrimCR)
             .ToList();
         string content = JoinLines(lines, "\n", trailingNewline: true);
+        UndoJournal.Record(safePath, beforeContent: null, existedBefore: false, ToolHandler.ApplyPatchFunctionName);
         System.IO.File.WriteAllText(safePath, content);
 
         int added = lines.Count;
@@ -152,6 +153,7 @@ internal static partial class PatchHandler
 
         string eol = raw.Contains("\r\n") ? "\r\n" : "\n";
         string content = JoinLines(originalLines.Select(TrimCR), eol, trailingNewline);
+        UndoJournal.Record(safePath, raw, existedBefore: true, ToolHandler.ApplyPatchFunctionName);
         System.IO.File.WriteAllText(safePath, content);
 
         int totalAdded = placements.Sum(p => p.Hunk.AddedCount);

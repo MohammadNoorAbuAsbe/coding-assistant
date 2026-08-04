@@ -190,6 +190,8 @@ public static class ResponseHandler
                     System.IO.Directory.CreateDirectory(directory);
                 }
 
+                bool existed = System.IO.File.Exists(safePath);
+                UndoJournal.Record(safePath, existed ? System.IO.File.ReadAllText(safePath) : null, existed, ToolHandler.WriteFunctionName);
                 System.IO.File.WriteAllText(safePath, args.content);
                 return new ToolChatMessage(toolCall.Id, $"Successfully wrote content to {args.file_path}");
             });
@@ -254,6 +256,7 @@ public static class ResponseHandler
         string newString)
     {
         string newContent = content.Substring(0, match.Index) + newString + content.Substring(match.Index + match.Length);
+        UndoJournal.Record(safePath, content, existedBefore: true, ToolHandler.EditFunctionName);
         System.IO.File.WriteAllText(safePath, newContent);
 
         string note = GetMatchNote(match);

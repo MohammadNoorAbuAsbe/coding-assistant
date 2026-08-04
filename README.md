@@ -11,9 +11,9 @@ A terminal-based AI coding assistant that uses LLMs to read, write, edit, search
 - **Streaming** — responses appear in real-time as the model generates them
 - **Context window management** — automatic truncation to prevent token overflow
 - **Agent loop** — continues working until the task is done (optional `MAX_ITERATIONS` cap)
+- **Undo / rollback** — every Write/Edit/ApplyPatch records a before-image; `/undo` restores the most recent change (or deletes newly created files) and `/history` lists recorded changes
 - **`.env` support** — load API keys and config from a `.env` file
 - **`config.json`** — customize providers, models, and endpoints
-- **Agent loop** — continues working until the task is done
 - **Fuzzy matching** — Edit tool matches even with whitespace/case differences
 - **Patch apply** — ApplyPatch applies multi-hunk unified diffs with fuzzy whitespace tolerance; can create new files
 - **Diff previews** — Diff tool shows what a change would look like without writing anything
@@ -85,6 +85,7 @@ dotnet run
 | `CONTEXT_WINDOW_SIZE` | No | `32768` (local) / `128000` (cloud) | Max tokens for context window |
 | `MAX_TOOL_RESULT_TOKENS` | No | 40% of context window | Max tokens per tool result (auto-truncated) |
 | `BASH_TIMEOUT` | No | `120000` (ms) | Timeout for Bash tool commands |
+| `UNDO_HISTORY_LIMIT` | No | `100` | Max file changes kept in the undo journal |
 | `NO_COLOR` | No | — | Set to any value to disable colored console output |
 
 Any provider's base URL can be overridden via `{PROVIDER}_BASE_URL` (e.g., `OPENAI_BASE_URL`).
@@ -175,6 +176,7 @@ src/
 ├── TaskHandler.cs        # Task tool implementation (sub-agents)
 ├── TodoWriteHandler.cs   # TodoWrite tool implementation (task lists)
 ├── ToolHandler.cs        # Tool definitions and OpenAI function schemas
+├── UndoJournal.cs        # Before-image journal backing the /undo and /history commands
 └── WebToolHandlers.cs    # WebFetch and WebSearch tool implementations
 ```
 
@@ -221,6 +223,17 @@ set AI_PROVIDER=ollama
 set AI_MODEL=qwen3:8b
 dotnet run "Create a REST API endpoint for user management"
 ```
+
+### Slash Commands
+
+Type these instead of a prompt to control the session:
+
+| Command | Description |
+|---------|-------------|
+| `/undo` | Restore the most recent file change made by Write/Edit/ApplyPatch (or delete the file if it was created by the change). The model is informed of the rollback so its context stays accurate. |
+| `/history` | List the recorded file changes for this session, newest first. |
+| `/new`, `/reset` | Reset the conversation (also clears the undo history). |
+| `/exit`, `/quit` | Exit the assistant. |
 
 ### Tool Usage Examples
 
