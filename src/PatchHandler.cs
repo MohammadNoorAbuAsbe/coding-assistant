@@ -57,8 +57,9 @@ internal static partial class PatchHandler
                     return ResponseHandler.CreateErrorResult(toolCall, $"Error: file not found '{args.file_path}'. The Diff tool compares the current file on disk with new_content; the file must exist.");
                 }
 
-                string oldText = await System.IO.File.ReadAllTextAsync(safePath);
+                string oldText = await System.IO.File.ReadAllTextAsync(safePath, cancellationToken);
                 string diff = GenerateUnifiedDiff(oldText, ResponseHandler.RepairContentEncoding(args.new_content), args.file_path);
+
 
                 if (string.IsNullOrEmpty(diff))
                 {
