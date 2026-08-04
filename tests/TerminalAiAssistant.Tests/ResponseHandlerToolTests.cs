@@ -166,6 +166,60 @@ public class ResponseHandlerToolTests
     }
 
     [Fact]
+    public async Task Edit_DoubleEscapedStrings_AreRepaired()
+    {
+        using var ws = new TempWorkspace();
+        ws.WriteFile("file.txt", "line1\nline2\n");
+
+        string json = $"{{\"file_path\":\"file.txt\",\"old_string\":{System.Text.Json.JsonSerializer.Serialize("line1\nline2")},\"new_string\":{System.Text.Json.JsonSerializer.Serialize("say \\\"hi\\\"\nline2")}}}";
+        var toolCall = ToolCallFactory.Create(ToolHandler.EditFunctionName, json);
+        var message = await ResponseHandler.ProcessSingleToolCallAsync(toolCall);
+
+        Assert.Contains("Successfully edited file.txt", ToolText(message!));
+        Assert.Equal("say \"hi\"\nline2\n", ws.ReadFile("file.txt"));
+    }
+
+    [Fact]
+    public async Task Write_DoubleEscapedContent_IsRepaired()
+    {
+        using var ws = new TempWorkspace();
+
+        string json = $"{{\"file_path\":\"f.txt\",\"content\":{System.Text.Json.JsonSerializer.Serialize("say \\\"hi\\\"")}}}";
+        var toolCall = ToolCallFactory.Create(ToolHandler.WriteFunctionName, json);
+        var message = await ResponseHandler.ProcessSingleToolCallAsync(toolCall);
+
+        Assert.Contains("Successfully wrote content to f.txt", ToolText(message!));
+        Assert.Equal("say \"hi\"", ws.ReadFile("f.txt"));
+    }
+
+    [Fact]
+    public async Task Write_FullyDoubleEncodedJsonArguments_AreDecoded()
+    {
+        using var ws = new TempWorkspace();
+
+        string inner = System.Text.Json.JsonSerializer.Serialize(new { file_path = "f.txt", content = "hello" });
+        string json = System.Text.Json.JsonSerializer.Serialize(inner);
+        var toolCall = ToolCallFactory.Create(ToolHandler.WriteFunctionName, json);
+        var message = await ResponseHandler.ProcessSingleToolCallAsync(toolCall);
+
+        Assert.Contains("Successfully wrote content to f.txt", ToolText(message!));
+        Assert.Equal("hello", ws.ReadFile("f.txt"));
+    }
+
+    [Fact]
+    public async Task ApplyPatch_DoubleEscapedAddedLines_AreRepaired()
+    {
+        using var ws = new TempWorkspace();
+
+        string json = $"{{\"file_path\":\"f.txt\",\"patch\":{System.Text.Json.JsonSerializer.Serialize("@@\n+say \\\"hi\\\"")}}}";
+        var toolCall = ToolCallFactory.Create(ToolHandler.ApplyPatchFunctionName, json);
+        var message = await ResponseHandler.ProcessSingleToolCallAsync(toolCall);
+
+        Assert.Contains("Created new file f.txt", ToolText(message!));
+        Assert.Equal("say \"hi\"\n", ws.ReadFile("f.txt"));
+    }
+
+    [Fact]
     public async Task UnknownFunction_ReturnsErrorListingAvailable()
     {
         using var ws = new TempWorkspace();

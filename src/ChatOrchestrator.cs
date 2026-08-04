@@ -46,7 +46,7 @@ public static class ChatOrchestrator
                     ? $"  [sub-agent iteration {iteration + 1}]"
                     : $"  [sub-agent {iteration + 1}/{maxIterations}]");
 
-            var (accumulatedToolCalls, responseContent) = await ProcessStreamingUpdates(client, messages, options, cancellationToken);
+            var (accumulatedToolCalls, responseContent) = await FetchWithEmptyResponseRetryAsync(client, messages, options, cancellationToken);
 
             if (accumulatedToolCalls.Count == 0)
             {
@@ -88,7 +88,7 @@ public static class ChatOrchestrator
             using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
                 await Console.Error.WriteLineAsync(" Thinking...");
 
-            var (accumulatedToolCalls, responseContent) = await ProcessStreamingUpdates(client, messages, options, cancellationToken);
+            var (accumulatedToolCalls, responseContent) = await FetchWithEmptyResponseRetryAsync(client, messages, options, cancellationToken);
 
             if (accumulatedToolCalls.Count == 0)
             {
@@ -159,8 +159,7 @@ public static class ChatOrchestrator
 
         if (responseContent == null && accumulatedToolCalls.Count == 0)
         {
-            responseContent = "Error: The model returned an empty response (no content and no tool calls). This often happens with free-tier or rate-limited endpoints — retry, or switch to a different model.";
-            await DisplayErrorAsync(responseContent);
+            throw new EmptyResponseException();
         }
 
         if (lineBuffer.Length > 0)
@@ -173,6 +172,44 @@ public static class ChatOrchestrator
         }
 
         return (accumulatedToolCalls, responseContent);
+    }
+
+    private const int EmptyResponseMaxRetries = 2;
+
+    private static async Task<(Dictionary<int, ToolCallAccumulator> ToolCalls, string? Content)> FetchWithEmptyResponseRetryAsync(
+        ChatClient client, List<ChatMessage> messages, ChatCompletionOptions options, CancellationToken cancellationToken)
+    {
+        for (int attempt = 0; ; attempt++)
+        {
+            try
+            {
+                return await ProcessStreamingUpdates(client, messages, options, cancellationToken);
+            }
+            catch (EmptyResponseException)
+            {
+                if (attempt >= EmptyResponseMaxRetries)
+                {
+                    string error = "Error: The model returned an empty response (no content and no tool calls) after 3 attempts. This often happens with free-tier or rate-limited endpoints — retry, or switch to a different model.";
+                    await DisplayErrorAsync(error);
+                    return (new Dictionary<int, ToolCallAccumulator>(), error);
+                }
+
+                using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
+                    await Console.Error.WriteLineAsync($"    [empty response — retrying ({attempt + 1}/{EmptyResponseMaxRetries})...]");
+                try
+                {
+                    await Task.Delay(1000 * (attempt + 1), cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    return (new Dictionary<int, ToolCallAccumulator>(), null);
+                }
+            }
+        }
+    }
+
+    private sealed class EmptyResponseException : Exception
+    {
     }
 
     private static void ProcessContentUpdate(IList<ChatMessageContentPart>? contentUpdate, ref string? responseContent, StringBuilder lineBuffer, ref bool inCodeBlock, ref bool reasoningOnLine)

@@ -16,8 +16,8 @@ await Configuration.RefreshContextWindowSizeAsync();
 
 var session = new ChatSession();
 
-using var cts = new CancellationTokenSource();
-AppBootstrapper.SetupCancelHandler(cts);
+var cancelController = new AppBootstrapper.CancelController();
+cancelController.RegisterCancelHandler();
 
 while (true)
 {
@@ -81,5 +81,6 @@ while (true)
         continue;
     }
 
-    await ChatOrchestrator.Run(session, prompt, cts.Token);
+    cancelController.Arm();
+    await ChatOrchestrator.Run(session, prompt, cancelController.Token);
 }

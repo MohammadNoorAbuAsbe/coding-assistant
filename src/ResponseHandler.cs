@@ -88,8 +88,32 @@ public static class ResponseHandler
         }
         catch (JsonException)
         {
+            return TryDecodeDoubleEncoded<T>(toolCall);
+        }
+    }
+
+    private static T? TryDecodeDoubleEncoded<T>(ChatToolCall toolCall) where T : class
+    {
+        try
+        {
+            string raw = toolCall.FunctionArguments.ToString();
+            string decoded = JsonSerializer.Deserialize<string>(raw) ?? "";
+            return JsonSerializer.Deserialize<T>(decoded, JsonOptions);
+        }
+        catch (JsonException)
+        {
             return null;
         }
+    }
+
+    internal static string RepairContentEncoding(string value)
+    {
+        if (string.IsNullOrEmpty(value) || !value.Contains("\\\""))
+        {
+            return value;
+        }
+
+        return value.Replace("\\\"", "\"");
     }
 
     internal static ToolChatMessage? ExecuteToolCall<T>(
@@ -192,7 +216,7 @@ public static class ResponseHandler
 
                 bool existed = System.IO.File.Exists(safePath);
                 UndoJournal.Record(safePath, existed ? System.IO.File.ReadAllText(safePath) : null, existed, ToolHandler.WriteFunctionName);
-                System.IO.File.WriteAllText(safePath, args.content);
+                System.IO.File.WriteAllText(safePath, RepairContentEncoding(args.content));
                 return new ToolChatMessage(toolCall.Id, $"Successfully wrote content to {args.file_path}");
             });
     }
@@ -220,14 +244,17 @@ public static class ResponseHandler
             return CreateErrorResult(toolCall, $"Error: file not found '{args.file_path}'.");
         }
 
+        string oldString = RepairContentEncoding(args.old_string!);
+        string newString = RepairContentEncoding(args.new_string!);
+
         string content = System.IO.File.ReadAllText(safePath);
-        var match = MatchFinder.FindBestMatch(content, args.old_string!);
+        var match = MatchFinder.FindBestMatch(content, oldString);
         if (match == null)
         {
             return CreateErrorResult(toolCall, $"Error: Edit tool could not find the specified 'old_string' in '{args.file_path}'. Use the ApplyPatch tool instead — Read the file first, then submit a patch with correct context lines.");
         }
 
-        return ApplyEditAndCreateResult(toolCall, args.file_path!, safePath, content, match, args.new_string!);
+        return ApplyEditAndCreateResult(toolCall, args.file_path!, safePath, content, match, newString);
     }
 
     private static ToolChatMessage? ValidateEditArgs(ChatToolCall toolCall, ToolHandler.EditFileCall args)

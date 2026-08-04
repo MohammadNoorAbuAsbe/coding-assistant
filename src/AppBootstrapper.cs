@@ -19,18 +19,31 @@ public static class AppBootstrapper
             : MenuHandler.SelectModel(providerId, providerConfig);
     }
 
-    public static void SetupCancelHandler(CancellationTokenSource cts)
+    public sealed class CancelController
     {
-        var cancelPressed = false;
-        Console.CancelKeyPress += (sender, e) =>
-        {
-            if (cancelPressed)
-                return;
+        private CancellationTokenSource _cts = new();
+        private bool _cancelPressed;
 
-            e.Cancel = true;
-            cancelPressed = true;
-            Console.Error.WriteLine("\n[Interrupted] Cancelling...");
-            cts.Cancel();
-        };
+        public CancellationToken Token => _cts.Token;
+
+        public void Arm()
+        {
+            _cts = new CancellationTokenSource();
+            _cancelPressed = false;
+        }
+
+        public void RegisterCancelHandler()
+        {
+            Console.CancelKeyPress += (_, e) =>
+            {
+                if (_cancelPressed)
+                    return;
+
+                e.Cancel = true;
+                _cancelPressed = true;
+                Console.Error.WriteLine("\n[Interrupted] Cancelling...");
+                _cts.Cancel();
+            };
+        }
     }
 }

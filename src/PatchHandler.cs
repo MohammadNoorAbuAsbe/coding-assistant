@@ -24,7 +24,7 @@ internal static partial class PatchHandler
 
                 string safePath = PathValidator.ValidatePath(args.file_path, Environment.CurrentDirectory);
 
-                var hunks = ParseHunks(args.patch, out string? parseError);
+                var hunks = ParseHunks(ResponseHandler.RepairContentEncoding(args.patch), out string? parseError);
                 if (hunks == null)
                     return ResponseHandler.CreateErrorResult(toolCall, $"Error: {parseError}");
 
@@ -58,7 +58,7 @@ internal static partial class PatchHandler
                 }
 
                 string oldText = System.IO.File.ReadAllText(safePath);
-                string diff = GenerateUnifiedDiff(oldText, args.new_content, args.file_path);
+                string diff = GenerateUnifiedDiff(oldText, ResponseHandler.RepairContentEncoding(args.new_content), args.file_path);
 
                 if (string.IsNullOrEmpty(diff))
                 {
@@ -518,7 +518,6 @@ internal static partial class PatchHandler
                         break;
 
                     end = next;
-                    i = end;
                 }
 
                 end = Math.Min(changes.Count, lastChange + 1 + contextLines);
