@@ -305,7 +305,20 @@ public static class ResponseHandler
                 if (endLine > lines.Length) endLine = lines.Length;
                 if (endLine < startLine) endLine = startLine;
 
+                string expansionNote = "";
+                if (args.end_line == null && args.start_line != null)
+                {
+                    var range = FindEnclosingMethodRange(lines, startLine - 1);
+                    if (range.HasValue)
+                    {
+                        startLine = range.Value.Start + 1;
+                        endLine = range.Value.End + 1;
+                        expansionNote = $"[Read expanded to enclosing method: lines {startLine}-{endLine}]\n";
+                    }
+                }
+
                 var sb = new System.Text.StringBuilder();
+                sb.Append(expansionNote);
                 for (int i = startLine - 1; i < endLine && i < lines.Length; i++)
                 {
                     sb.AppendLine($"{i + 1}: {lines[i]}");
@@ -332,6 +345,95 @@ public static class ResponseHandler
     private static int ParseLineNumber(string? value, int fallback)
     {
         return int.TryParse(value, out int n) ? n : fallback;
+    }
+
+    private static (int Start, int End)? FindEnclosingMethodRange(string[] lines, int targetLine)
+    {
+        if (lines.Length == 0 || targetLine < 0 || targetLine >= lines.Length) return null;
+
+        int braceLine = -1;
+        for (int i = targetLine; i >= 0; i--)
+        {
+            if (!lines[i].TrimEnd().EndsWith('{')) continue;
+            if (IsMethodOpeningBrace(lines, i))
+            {
+                braceLine = i;
+                break;
+            }
+        }
+        if (braceLine < 0) return null;
+
+        int signatureStart = braceLine;
+        for (int i = braceLine - 1; i >= 0; i--)
+        {
+            string trimmed = lines[i].TrimEnd();
+            if (trimmed.Length == 0) break;
+            char last = trimmed[^1];
+            if (last == '(' || last == ')' || last == ',')
+            {
+                signatureStart = i;
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        int depth = 0;
+        bool inString = false;
+        for (int i = braceLine; i < lines.Length; i++)
+        {
+            string line = lines[i];
+            for (int c = 0; c < line.Length; c++)
+            {
+                char ch = line[c];
+                if (inString)
+                {
+                    if (ch == '"' && !IsEscaped(line, c)) inString = false;
+                    continue;
+                }
+                if (ch == '/' && c + 1 < line.Length && line[c + 1] == '/') break;
+                if (ch == '{') depth++;
+                else if (ch == '}') depth--;
+                else if (ch == '"') inString = true;
+            }
+            if (depth == 0 && i > braceLine)
+            {
+                return (signatureStart, i);
+            }
+        }
+        return null;
+    }
+
+    private static bool IsMethodOpeningBrace(string[] lines, int braceIndex)
+    {
+        for (int i = braceIndex - 1; i >= 0; i--)
+        {
+            string line = lines[i].Trim();
+            if (line.Length == 0) return false;
+            if (line.EndsWith('{') || line.EndsWith('}') || line.EndsWith(';')) return false;
+            if (line.Contains('('))
+            {
+                return !IsControlKeywordStart(line);
+            }
+        }
+        return false;
+    }
+
+    private static bool IsControlKeywordStart(string line)
+    {
+        foreach (string keyword in new[] { "if ", "for ", "while ", "foreach ", "switch ", "catch ", "using ", "lock ", "else ", "return ", "do " })
+        {
+            if (line.StartsWith(keyword, StringComparison.Ordinal)) return true;
+        }
+        return false;
+    }
+
+    private static bool IsEscaped(string line, int index)
+    {
+        int backslashes = 0;
+        for (int i = index - 1; i >= 0 && line[i] == '\\'; i--) backslashes++;
+        return backslashes % 2 == 1;
     }
 
     private static ToolChatMessage? ProcessWriteFileCall(ChatToolCall toolCall)
@@ -397,10 +499,67 @@ public static class ResponseHandler
         var match = MatchFinder.FindBestMatch(content, oldString);
         if (match == null)
         {
-            return CreateErrorResult(toolCall, $"Error: Edit tool could not find the specified 'old_string' in '{args.file_path}'. The old_string does not match any text in the file — it likely contains lines you did not actually read, or text you invented. Use Read with start_line/end_line to fetch the exact target lines, then retry with old_string copied verbatim from the Read output (line-number prefixes are stripped automatically). Never invent or reconstruct lines from memory.");
+            string region = BuildClosestRegionSuggestion(content, oldString);
+            string hint = string.IsNullOrEmpty(region)
+                ? ""
+                : $" Closest region in the file (copy from here verbatim — line-number prefixes are stripped automatically):\n{region}";
+            return CreateErrorResult(toolCall, $"Error: Edit tool could not find the specified 'old_string' in '{args.file_path}'. The old_string does not match any text in the file — it likely contains lines you did not actually read, or text you invented. Use Read with start_line/end_line to fetch the exact target lines, then retry with old_string copied verbatim from the Read output. Never invent or reconstruct lines from memory.{hint}");
         }
 
         return ApplyEditAndCreateResult(toolCall, args.file_path!, safePath, content, match, newString);
+    }
+
+    private static string BuildClosestRegionSuggestion(string content, string oldString)
+    {
+        string? target = null;
+        foreach (string line in oldString.Split('\n'))
+        {
+            string trimmed = line.Trim();
+            if (trimmed.Length > 0)
+            {
+                target = trimmed;
+                break;
+            }
+        }
+        if (target == null) return "";
+
+        string[] contentLines = content.Split('\n');
+        int bestIdx = -1;
+        double bestScore = 0;
+        for (int i = 0; i < contentLines.Length; i++)
+        {
+            string line = contentLines[i].Trim();
+            if (line.Length == 0) continue;
+            if (line == target)
+            {
+                bestIdx = i;
+                bestScore = 1.0;
+                break;
+            }
+
+            int maxLen = Math.Min(line.Length, target.Length);
+            int prefix = 0;
+            while (prefix < maxLen && line[prefix] == target[prefix]) prefix++;
+            double score = (double)prefix / Math.Max(line.Length, target.Length);
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestIdx = i;
+            }
+        }
+
+        if (bestIdx < 0 || bestScore <= 0.15) return "";
+
+        int start = Math.Max(0, bestIdx - 4);
+        int end = Math.Min(contentLines.Length - 1, bestIdx + 3);
+        var sb = new System.Text.StringBuilder();
+        for (int i = start; i <= end; i++)
+        {
+            sb.AppendLine($"{i + 1}: {contentLines[i].TrimEnd('\r')}");
+        }
+        string snippet = sb.ToString();
+        if (snippet.Length > 700) snippet = snippet[..700] + "\n...";
+        return snippet;
     }
 
     private static ToolChatMessage? ValidateEditArgs(ChatToolCall toolCall, ToolHandler.EditFileCall args)

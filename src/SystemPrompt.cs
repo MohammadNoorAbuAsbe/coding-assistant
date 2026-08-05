@@ -3,7 +3,7 @@ namespace TerminalAiAssistant;
 public static class SystemPrompt
 {
     private const string ToolDescriptions = @"
-1. **Read** — Read a file. Shows content with line numbers like ""1: code"". Parameters: {""file_path"": ""<path>""}. Optional: ""start_line"", ""end_line"" — read only a line range (e.g., to fetch the rest of a truncated file).
+1. **Read** — Read a file. Shows content with line numbers like ""1: code"". Parameters: {""file_path"": ""<path>""}. Optional: ""start_line"", ""end_line"" — read only a line range (e.g., to fetch the rest of a truncated file). If only ""start_line"" is given, the range auto-expands to the enclosing method's full body (the result reports the expanded range).
 2. **Write** — Write a file (creates dirs automatically). Parameters: {""file_path"": ""<path>"", ""content"": ""<content>""}
 3. **Edit** — Edit a file by string replacement. Matching tolerates only leading/trailing whitespace and unicode differences per line (plus, as a last resort, line-sequence similarity) — every line of old_string must actually exist in the file, so never approximate, guess, or invent code you have not read. Line-number prefixes copied from Read output (e.g. ""177: code"") are stripped automatically, so paste the Read output verbatim. CRITICAL: Read the target lines first and copy old_string from the Read result; if you only read a small line range, Read a wider range covering the whole block before editing. Can span multiple lines. On success, the applied diff is returned. Parameters: {""file_path"": ""<path>"", ""old_string"": ""<text>"", ""new_string"": ""<replacement text>""}
 4. **ApplyPatch** — Apply a unified diff (patch) to a file, making many changes in one call. Hunks: @@ -start,count +start,count @@ followed by lines prefixed with "" "" (context), ""-"" (removed), and ""+"" (added). No timestamps in headers. Headers are optional hints: a bare ""@@"" separator is accepted, and matching is done by content, so counts and positions do not need to be exact. Hunks match fuzzily (leading/trailing whitespace differences tolerated). The result reports how each hunk matched and returns the applied diff. Code fences around the patch are ignored. To create a new file, the file must not exist and the patch must contain only ""+"" lines. Parameters: {""file_path"": ""<path>"", ""patch"": ""<unified diff>""}.
@@ -32,7 +32,7 @@ public static class SystemPrompt
 - **Task** — launch a sub-agent
 - **TodoWrite** — maintain a structured task list
 
-Full parameter details are in the tool schemas — read them carefully before calling a tool. Keep tool results small: use Grep to locate code and Read with line ranges instead of dumping whole files.";
+Full parameter details are in the tool schemas — read them carefully before calling a tool. Use Grep to locate code and Read with line ranges to target what you need — but when a diagnostic references a method, read the whole method in one call (providing start_line alone auto-expands the range to the enclosing method).";
 
     private const string EditToolChoiceSection = @"
 ## Choosing the Right Edit Tool
@@ -81,6 +81,7 @@ You are in an agent loop. Each iteration you can call one or more tools. You wil
 
 - When asked about the project, use Grep and Read to explore before answering. Do not guess.
 - Read files before modifying them unless told to create new ones.
+- When a diagnostic references a method, read the ENTIRE method (a wide line range, typically 50-300 lines) before editing it. Editing from a tiny window causes failures.
 - Use Edit for targeted changes. Use Write for new files or large rewrites. Use ApplyPatch for multiple changes.
 - You can call multiple tools in one iteration. Be efficient.
 - If a tool fails, try a different approach.

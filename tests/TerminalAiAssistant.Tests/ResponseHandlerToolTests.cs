@@ -75,6 +75,71 @@ public class ResponseHandlerToolTests
     }
 
     [Fact]
+    public async Task Read_StartLineOnly_ExpandsToEnclosingMethod()
+    {
+        using var ws = new TempWorkspace();
+        ws.WriteFile("file.txt",
+            "class A\n{\n" +
+            "    public void Foo()\n" +
+            "    {\n" +
+            "        int x = 1;\n" +
+            "        if (x > 0)\n" +
+            "        {\n" +
+            "            x++;\n" +
+            "        }\n" +
+            "    }\n" +
+            "}\n");
+
+        var message = await RunAsync(ToolHandler.ReadFunctionName, new { file_path = "file.txt", start_line = "5" });
+
+        string text = ToolText(message!);
+        Assert.Contains("expanded to enclosing method: lines 3-10", text);
+        Assert.Contains("3:     public void Foo()", text);
+        Assert.Contains("10:     }", text);
+        Assert.DoesNotContain("11: }", text);
+    }
+
+    [Fact]
+    public async Task Read_StartLineOnly_MultiLineSignature_Expands()
+    {
+        using var ws = new TempWorkspace();
+        ws.WriteFile("file.txt",
+            "    public static async Task<int> Foo(\n" +
+            "        int a,\n" +
+            "        int b)\n" +
+            "    {\n" +
+            "        return a + b;\n" +
+            "    }\n");
+
+        var message = await RunAsync(ToolHandler.ReadFunctionName, new { file_path = "file.txt", start_line = "5" });
+
+        string text = ToolText(message!);
+        Assert.Contains("expanded to enclosing method: lines 1-6", text);
+        Assert.Contains("1:     public static async Task<int> Foo(", text);
+        Assert.Contains("6:     }", text);
+    }
+
+    [Fact]
+    public async Task Read_WithEndLine_NoMethodExpansion()
+    {
+        using var ws = new TempWorkspace();
+        ws.WriteFile("file.txt",
+            "class A\n{\n" +
+            "    public void Foo()\n" +
+            "    {\n" +
+            "        int x = 1;\n" +
+            "    }\n" +
+            "}\n");
+
+        var message = await RunAsync(ToolHandler.ReadFunctionName, new { file_path = "file.txt", start_line = "5", end_line = "5" });
+
+        string text = ToolText(message!);
+        Assert.DoesNotContain("expanded to enclosing method", text);
+        Assert.Contains("5:         int x = 1;", text);
+        Assert.DoesNotContain("3:     public void Foo()", text);
+    }
+
+    [Fact]
     public async Task Read_LargeFile_TruncatesAndSuggestsRanges()
     {
         using var ws = new TempWorkspace();
@@ -188,6 +253,32 @@ public class ResponseHandlerToolTests
         Assert.Contains("Edit tool could not find the specified 'old_string'", text);
         Assert.Contains("copied verbatim from the Read output", text);
         Assert.Equal("foo\nbar\n", ws.ReadFile("file.txt"));
+    }
+
+    [Fact]
+    public async Task Edit_NoMatch_ReturnsClosestRegionSuggestion()
+    {
+        using var ws = new TempWorkspace();
+        ws.WriteFile("file.txt", "foo\nbar\nbaz\nqux\n");
+
+        var message = await RunAsync(ToolHandler.EditFunctionName, new { file_path = "file.txt", old_string = "barzz", new_string = "x" });
+
+        string text = ToolText(message!);
+        Assert.Contains("Closest region in the file", text);
+        Assert.Contains("2: bar", text);
+        Assert.Equal("foo\nbar\nbaz\nqux\n", ws.ReadFile("file.txt"));
+    }
+
+    [Fact]
+    public async Task Edit_NoMatch_NoSuggestionWhenNothingSimilar()
+    {
+        using var ws = new TempWorkspace();
+        ws.WriteFile("file.txt", "foo\nbar\n");
+
+        var message = await RunAsync(ToolHandler.EditFunctionName, new { file_path = "file.txt", old_string = "zzz\nzzz", new_string = "x" });
+
+        string text = ToolText(message!);
+        Assert.DoesNotContain("Closest region in the file", text);
     }
 
     [Fact]
