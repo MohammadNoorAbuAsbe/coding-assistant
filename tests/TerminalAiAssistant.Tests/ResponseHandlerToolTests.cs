@@ -191,6 +191,18 @@ public class ResponseHandlerToolTests
     }
 
     [Fact]
+    public async Task Edit_ReadOutputWithLineNumberPrefixes_Succeeds()
+    {
+        using var ws = new TempWorkspace();
+        ws.WriteFile("file.txt", "foo\n  padded  \nbar\n");
+
+        var message = await RunAsync(ToolHandler.EditFunctionName, new { file_path = "file.txt", old_string = "2:   padded  ", new_string = "changed" });
+
+        Assert.Contains("Successfully edited file.txt", ToolText(message!));
+        Assert.Equal("foo\nchanged\nbar\n", ws.ReadFile("file.txt"));
+    }
+
+    [Fact]
     public async Task Edit_AmbiguousMatch_ReturnsError()
     {
         using var ws = new TempWorkspace();

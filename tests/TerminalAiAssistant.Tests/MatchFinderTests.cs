@@ -271,4 +271,36 @@ public class MatchFinderTests
         var content = string.Join('\n', Enumerable.Range(0, 20).Select(i => $"l{i}"));
         Assert.Null(MatchFinder.FindBestMatch(content, "l99\nl98\nl97\nl96\nl95\nl94"));
     }
+
+    [Fact]
+    public void ReadLineNumberPrefixes_StrippedAsFallback_SingleLine()
+    {
+        var content = "        await DoThing();\n";
+        var result = MatchFinder.FindBestMatch(content, "177: await DoThing();\n");
+
+        Assert.NotNull(result);
+        Assert.Equal(8, result.Index);
+    }
+
+    [Fact]
+    public void ReadLineNumberPrefixes_StrippedAsFallback_MultiLine()
+    {
+        var content = "        for (int i = 0; i < 5; i++)\n        {\n            DoWork();\n        }\n";
+        var result = MatchFinder.FindBestMatch(content, "189: for (int i = 0; i < 5; i++)\n190: {\n191:             DoWork();");
+
+        Assert.NotNull(result);
+        Assert.Equal(MatchStrategy.NormalizedWhitespace, result.Strategy);
+        Assert.Equal(8, result.Index);
+    }
+
+    [Fact]
+    public void ReadLineNumberPrefixes_RealPrefix_MatchesExactFirst()
+    {
+        var content = "12:30 end\n";
+        var result = MatchFinder.FindBestMatch(content, "12:30 end\n");
+
+        Assert.NotNull(result);
+        Assert.Equal(MatchStrategy.Exact, result.Strategy);
+        Assert.Equal(0, result.Index);
+    }
 }

@@ -21,6 +21,22 @@ internal static class MatchFinder
     {
         if (string.IsNullOrEmpty(oldString)) return null;
 
+        var result = FindBestMatchCore(content, oldString);
+        if (result != null) return result;
+
+        string stripped = StripReadLineNumberPrefixes(oldString);
+        if (stripped != oldString)
+        {
+            result = FindBestMatchCore(content, stripped);
+        }
+
+        return result;
+    }
+
+    private static MatchResult? FindBestMatchCore(string content, string oldString)
+    {
+        if (string.IsNullOrEmpty(oldString)) return null;
+
         var result = TryMatch(content, oldString, MatchStrategy.Exact);
         if (result != null) return result;
 
@@ -34,6 +50,24 @@ internal static class MatchFinder
         if (result != null) return result;
 
         return null;
+    }
+
+    private static string StripReadLineNumberPrefixes(string text)
+    {
+        var lines = text.Split('\n');
+        bool changed = false;
+        for (int i = 0; i < lines.Length; i++)
+        {
+            string line = lines[i];
+            int pos = 0;
+            while (pos < line.Length && char.IsDigit(line[pos])) pos++;
+            if (pos > 0 && pos < line.Length && line[pos] == ':' && pos + 1 < line.Length && line[pos + 1] == ' ')
+            {
+                lines[i] = line.Substring(pos + 2);
+                changed = true;
+            }
+        }
+        return changed ? string.Join('\n', lines) : text;
     }
 
     private static MatchResult? TryMatch(string content, string oldString, MatchStrategy strategy)

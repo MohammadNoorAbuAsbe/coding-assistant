@@ -174,7 +174,7 @@ public static class ChatOrchestrator
             string remaining = lineBuffer.ToString();
             string rendered = AnsiRenderer.Render(remaining, ref inCodeBlock);
             Console.Write(rendered);
-            await Console.Out.FlushAsync();
+            await Console.Out.FlushAsync(cancellationToken);
             lineBuffer.Clear();
         }
 
@@ -186,7 +186,8 @@ public static class ChatOrchestrator
     private static async Task<(Dictionary<int, ToolCallAccumulator> ToolCalls, string? Content)> FetchWithEmptyResponseRetryAsync(
         ChatClient client, List<ChatMessage> messages, ChatCompletionOptions options, CancellationToken cancellationToken)
     {
-        for (int attempt = 0; ; attempt++)
+        int attempt = 0;
+        while (true)
         {
             try
             {
@@ -211,6 +212,8 @@ public static class ChatOrchestrator
                 {
                     return (new Dictionary<int, ToolCallAccumulator>(), null);
                 }
+
+                attempt++;
             }
         }
     }

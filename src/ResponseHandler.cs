@@ -397,7 +397,7 @@ public static class ResponseHandler
         var match = MatchFinder.FindBestMatch(content, oldString);
         if (match == null)
         {
-            return CreateErrorResult(toolCall, $"Error: Edit tool could not find the specified 'old_string' in '{args.file_path}'. The old_string does not match any text in the file — it likely contains lines you did not actually read. Use Read with start_line/end_line to fetch the exact target lines, then retry with old_string copied verbatim from the Read output. Never invent or reconstruct lines from memory.");
+            return CreateErrorResult(toolCall, $"Error: Edit tool could not find the specified 'old_string' in '{args.file_path}'. The old_string does not match any text in the file — it likely contains lines you did not actually read, or text you invented. Use Read with start_line/end_line to fetch the exact target lines, then retry with old_string copied verbatim from the Read output (line-number prefixes are stripped automatically). Never invent or reconstruct lines from memory.");
         }
 
         return ApplyEditAndCreateResult(toolCall, args.file_path!, safePath, content, match, newString);
