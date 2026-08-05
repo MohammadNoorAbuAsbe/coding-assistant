@@ -28,6 +28,7 @@ public static class AppBootstrapper
 
         public void Arm()
         {
+            _cts?.Dispose();
             _cts = new CancellationTokenSource();
             _cancelPressed = false;
         }

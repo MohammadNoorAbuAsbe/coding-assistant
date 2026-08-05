@@ -177,7 +177,7 @@ public class ResponseHandlerToolTests
     }
 
     [Fact]
-    public async Task Edit_NoMatch_ReturnsErrorSuggestingApplyPatch()
+    public async Task Edit_NoMatch_ReturnsErrorAdvisingVerbatimRetry()
     {
         using var ws = new TempWorkspace();
         ws.WriteFile("file.txt", "foo\nbar\n");
@@ -186,7 +186,7 @@ public class ResponseHandlerToolTests
 
         string text = ToolText(message!);
         Assert.Contains("Edit tool could not find the specified 'old_string'", text);
-        Assert.Contains("ApplyPatch", text);
+        Assert.Contains("copied verbatim from the Read output", text);
         Assert.Equal("foo\nbar\n", ws.ReadFile("file.txt"));
     }
 

@@ -131,7 +131,7 @@ public static class ChatOrchestrator
 
         try
         {
-            await foreach (var update in ChatService.GetCompletionStreaming(client, messages, options).WithCancellation(cancellationToken))
+            await foreach (var update in ChatService.GetCompletionStreaming(client, messages, options, cancellationToken))
             {
                 DrainReasoning(ref reasoningOnLine);
                 ProcessContentUpdate(update.ContentUpdate, ref responseContent, lineBuffer, ref inCodeBlock, ref reasoningOnLine);
@@ -215,7 +215,7 @@ public static class ChatOrchestrator
         }
     }
 
-    private sealed class EmptyResponseException : Exception
+    public sealed class EmptyResponseException : Exception
     {
     }
 
@@ -516,8 +516,9 @@ public static class ChatOrchestrator
                 }
             }
         }
-        catch
+        catch (Exception exRaw)
         {
+            return $"Error: {exRaw}.";
         }
 
         if (ex.Status == 429 || (errorMessage?.Contains("rate limit", StringComparison.OrdinalIgnoreCase) ?? false))

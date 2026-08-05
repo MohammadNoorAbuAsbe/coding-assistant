@@ -69,8 +69,8 @@ internal static class BuildVerifier
         using var process = new Process { StartInfo = startInfo };
         process.Start();
 
-        var stdoutTask = Task.Run(() => process.StandardOutput.ReadToEnd());
-        var stderrTask = Task.Run(() => process.StandardError.ReadToEnd());
+        var stdoutTask = Task.Run(() => process.StandardOutput.ReadToEnd(), cancellationToken);
+        var stderrTask = Task.Run(() => process.StandardError.ReadToEnd(), cancellationToken);
 
         using var timeoutCts = new CancellationTokenSource(timeoutMs);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
@@ -83,7 +83,7 @@ internal static class BuildVerifier
         catch (OperationCanceledException)
         {
             process.Kill(entireProcessTree: true);
-            await process.WaitForExitAsync();
+            await process.WaitForExitAsync(CancellationToken.None);
             var stdout = await SafeReadTask(stdoutTask);
             var stderr = await SafeReadTask(stderrTask);
             return (stdout, stderr, -1, true);
