@@ -297,7 +297,24 @@ public static class ResponseHandler
 
                 string safePath = PathValidator.ValidatePath(args.file_path, Environment.CurrentDirectory);
 
+                if (System.IO.Directory.Exists(safePath))
+                {
+                    return ListDirectory(toolCall, args.file_path, safePath);
+                }
+
+                if (!System.IO.File.Exists(safePath))
+                {
+                    return CreateErrorResult(toolCall, BuildFileNotFoundMessage(args.file_path, safePath));
+                }
+
+                if (IsBinaryFile(safePath))
+                {
+                    return CreateErrorResult(toolCall, $"Error reading file: '{args.file_path}' appears to be a binary file and cannot be read as text.");
+                }
+
                 string[] lines = System.IO.File.ReadAllLines(safePath);
+                FileStateJournal.RecordRead(safePath, string.Join("\n", lines));
+
                 int startLine = ParseLineNumber(args.start_line, 1);
                 if (startLine < 1) startLine = 1;
                 if (startLine > lines.Length) startLine = lines.Length + 1;
@@ -340,6 +357,133 @@ public static class ResponseHandler
 
                 return new ToolChatMessage(toolCall.Id, fileText);
             });
+    }
+
+    private static string BuildFileNotFoundMessage(string displayPath, string safePath)
+    {
+        string message = $"Error reading file: '{displayPath}' was not found.";
+
+        string? dir = System.IO.Path.GetDirectoryName(safePath);
+        string? baseName = System.IO.Path.GetFileName(safePath);
+        if (string.IsNullOrEmpty(dir) || string.IsNullOrEmpty(baseName) || !System.IO.Directory.Exists(dir))
+        {
+            return message;
+        }
+
+        var candidates = new List<(string Name, double Score)>();
+        try
+        {
+            foreach (string sibling in System.IO.Directory.EnumerateFiles(dir))
+            {
+                string name = System.IO.Path.GetFileName(sibling);
+                if (name == null) continue;
+                double score = NameSimilarity(name, baseName);
+                if (score >= 0.4)
+                {
+                    candidates.Add((name, score));
+                }
+            }
+        }
+        catch
+        {
+            return message;
+        }
+
+        if (candidates.Count == 0) return message;
+
+        candidates.Sort((a, b) => b.Score.CompareTo(a.Score));
+        string suggestions = string.Join("\n", candidates.Take(3).Select(c => $"  {c.Name}"));
+        return $"{message} Did you mean one of these?\n{suggestions}";
+    }
+
+    private static double NameSimilarity(string a, string b)
+    {
+        string la = a.ToLowerInvariant();
+        string lb = b.ToLowerInvariant();
+        if (la == lb) return 1.0;
+        if (la.Contains(lb, StringComparison.Ordinal) || lb.Contains(la, StringComparison.Ordinal)) return 0.75;
+
+        int maxLen = Math.Max(la.Length, lb.Length);
+        if (maxLen == 0) return 0;
+
+        int prefix = 0;
+        int minLen = Math.Min(la.Length, lb.Length);
+        while (prefix < minLen && la[prefix] == lb[prefix]) prefix++;
+        double prefixRatio = (double)prefix / maxLen;
+
+        int overlap = 0;
+        foreach (char c in lb)
+        {
+            if (la.Contains(c, StringComparison.Ordinal)) overlap++;
+        }
+        double overlapRatio = (double)overlap / lb.Length;
+
+        return Math.Max(prefixRatio, overlapRatio * 0.8);
+    }
+
+    private static ToolChatMessage ListDirectory(ChatToolCall toolCall, string displayPath, string safePath)
+    {
+        var entries = new List<string>();
+        try
+        {
+            foreach (string entry in System.IO.Directory.EnumerateFileSystemEntries(safePath))
+            {
+                string name = System.IO.Path.GetFileName(entry) ?? entry;
+                entries.Add(System.IO.Directory.Exists(entry) ? name + "/" : name);
+            }
+        }
+        catch (Exception ex)
+        {
+            return CreateErrorResult(toolCall, $"Error reading directory '{displayPath}': {ex.Message}");
+        }
+
+        entries.Sort(StringComparer.OrdinalIgnoreCase);
+        string result = $"Directory listing of {displayPath} ({entries.Count} entries):\n{string.Join("\n", entries)}";
+        result = ContextManager.TruncateToolResult(result, Configuration.GetMaxToolResultTokens());
+        return new ToolChatMessage(toolCall.Id, result);
+    }
+
+    private static readonly HashSet<string> BinaryExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".zip", ".tar", ".gz", ".tgz", ".bz2", ".xz", ".7z", ".rar",
+        ".exe", ".dll", ".so", ".class", ".jar", ".war", ".bin", ".dat", ".obj", ".o", ".a", ".lib", ".wasm",
+        ".pyc", ".pyo", ".pyd",
+        ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".bmp", ".tiff", ".svgz",
+        ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".odt", ".ods", ".odp",
+        ".mp3", ".mp4", ".wav", ".avi", ".mov", ".mkv", ".flac", ".ogg",
+        ".ttf", ".otf", ".woff", ".woff2", ".eot"
+    };
+
+    private static bool IsBinaryFile(string safePath)
+    {
+        string ext = System.IO.Path.GetExtension(safePath);
+        if (BinaryExtensions.Contains(ext)) return true;
+
+        try
+        {
+            using var fs = new System.IO.FileStream(safePath, System.IO.FileMode.Open, System.IO.FileAccess.Read);
+            if (fs.Length == 0) return false;
+            int toRead = (int)Math.Min(8192, fs.Length);
+            var buffer = new byte[toRead];
+            int read = fs.Read(buffer, 0, toRead);
+            if (read == 0) return false;
+
+            // UTF-16 BOM => text
+            if (read >= 2 && ((buffer[0] == 0xFF && buffer[1] == 0xFE) || (buffer[0] == 0xFE && buffer[1] == 0xFF)))
+                return false;
+
+            int nonPrintable = 0;
+            for (int i = 0; i < read; i++)
+            {
+                if (buffer[i] == 0) return true;
+                if (buffer[i] < 9 || (buffer[i] > 13 && buffer[i] < 32)) nonPrintable++;
+            }
+            return (double)nonPrintable / read > 0.3;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static int ParseLineNumber(string? value, int fallback)
@@ -464,7 +608,9 @@ public static class ResponseHandler
 
                 bool existed = System.IO.File.Exists(safePath);
                 UndoJournal.Record(safePath, existed ? System.IO.File.ReadAllText(safePath) : null, existed, ToolHandler.WriteFunctionName);
-                System.IO.File.WriteAllText(safePath, RepairContentEncoding(args.content));
+                string written = RepairContentEncoding(args.content);
+                System.IO.File.WriteAllText(safePath, written);
+                FileStateJournal.RecordWrite(safePath, written);
                 return new ToolChatMessage(toolCall.Id, $"Successfully wrote content to {args.file_path}");
             });
     }
@@ -496,6 +642,30 @@ public static class ResponseHandler
         string newString = RepairContentEncoding(args.new_string!);
 
         string content = System.IO.File.ReadAllText(safePath);
+
+        if (!FileStateJournal.HasState(safePath))
+        {
+            return CreateErrorResult(toolCall, $"Error: Edit tool cannot edit '{args.file_path}' because the file was not read in this session. Use the Read tool to read the file first, then retry the Edit with old_string copied verbatim from the Read output.");
+        }
+
+        string? notice = null;
+        if (FileStateJournal.IsStale(safePath, content))
+        {
+            notice = $"Warning: '{args.file_path}' changed on disk since the session last read or wrote it. The edit was applied to the current content, but Read the file to verify the result.";
+        }
+
+        if (args.replace_all != null &&
+            (args.replace_all.Equals("true", StringComparison.OrdinalIgnoreCase) || args.replace_all == "1"))
+        {
+            return ApplyReplaceAllEditAndCreateResult(toolCall, args.file_path!, safePath, content, oldString, newString, notice);
+        }
+
+        var exactMatches = MatchFinder.FindAllExactMatches(content, oldString);
+        if (exactMatches.Count > 1)
+        {
+            return CreateErrorResult(toolCall, $"Error: the specified 'old_string' matches the file in more than one place ({exactMatches.Count} occurrences). Add more surrounding context (adjacent lines) to the old_string to make it unique, or set replace_all to 'true' to replace all occurrences.");
+        }
+
         var match = MatchFinder.FindBestMatch(content, oldString);
         if (match == null)
         {
@@ -506,7 +676,24 @@ public static class ResponseHandler
             return CreateErrorResult(toolCall, $"Error: Edit tool could not find the specified 'old_string' in '{args.file_path}'. The old_string does not match any text in the file — it likely contains lines you did not actually read, or text you invented. Use Read with start_line/end_line to fetch the exact target lines, then retry with old_string copied verbatim from the Read output. Never invent or reconstruct lines from memory.{hint}");
         }
 
-        return ApplyEditAndCreateResult(toolCall, args.file_path!, safePath, content, match, newString);
+        if (IsDisproportionateMatch(content, match, oldString))
+        {
+            int matchedLines = content.Substring(match.Index, match.Length).Split('\n').Length;
+            int oldLines = oldString.Split('\n').Length;
+            return CreateErrorResult(toolCall, $"Error: refusing the edit to '{args.file_path}' because the matched span is much larger than old_string (matched {matchedLines} lines for an old_string of {oldLines} lines). The old_string probably matched in an unexpected location, which would delete unrelated code. Re-read the file and provide the full exact oldString for the intended replacement.");
+        }
+
+        return ApplyEditAndCreateResult(toolCall, args.file_path!, safePath, content, match, newString, notice);
+    }
+
+    private static bool IsDisproportionateMatch(string content, MatchResult match, string oldString)
+    {
+        int oldLines = oldString.Split('\n').Length;
+        string matched = content.Substring(match.Index, match.Length);
+        int matchedLines = matched.Split('\n').Length;
+        if (matchedLines >= Math.Max(oldLines + 3, oldLines * 2)) return true;
+        if (oldLines == 1) return false;
+        return matched.Trim().Length > Math.Max(oldString.Trim().Length + 500, oldString.Trim().Length * 4);
     }
 
     private static string BuildClosestRegionSuggestion(string content, string oldString)
@@ -585,22 +772,122 @@ public static class ResponseHandler
         string safePath,
         string content,
         MatchResult match,
-        string newString)
+        string newString,
+        string? notice = null)
     {
-        string newContent = content.Substring(0, match.Index) + newString + content.Substring(match.Index + match.Length);
+        string eol = content.Contains("\r\n") ? "\r\n" : "\n";
+        string normalizedNew = newString.Replace("\r\n", "\n");
+        if (eol == "\r\n")
+        {
+            normalizedNew = normalizedNew.Replace("\n", "\r\n");
+        }
+
+        string rawOld = content.Substring(match.Index, match.Length);
+        if (normalizedNew.Length == 0 && !rawOld.EndsWith('\n') && !rawOld.EndsWith('\r'))
+        {
+            int after = match.Index + match.Length;
+            if (after + 1 < content.Length && content[after] == '\r' && content[after + 1] == '\n')
+                match = match with { Length = match.Length + 2 };
+            else if (after < content.Length && content[after] == '\n')
+                match = match with { Length = match.Length + 1 };
+        }
+
+        string newContent = content.Substring(0, match.Index) + normalizedNew + content.Substring(match.Index + match.Length);
         UndoJournal.Record(safePath, content, existedBefore: true, ToolHandler.EditFunctionName);
         System.IO.File.WriteAllText(safePath, newContent);
+        FileStateJournal.RecordWrite(safePath, newContent);
 
         string note = GetMatchNote(match);
         string? diff = TryGenerateDiff(content, newContent, filePath);
 
-        string message = $"Successfully edited {filePath}{note}.";
+        string matched = content.Substring(match.Index, match.Length);
+        int startLine = CountNewlines(content, 0, match.Index) + 1;
+        int oldLines = CountNewlines(matched, 0, matched.Length) + 1;
+        int newLines = CountNewlines(normalizedNew, 0, normalizedNew.Length) + 1;
+        int oldTotal = CountNewlines(content, 0, content.Length) + 1;
+        int newTotal = CountNewlines(newContent, 0, newContent.Length) + 1;
+
+        var sb = new System.Text.StringBuilder();
+        if (!string.IsNullOrEmpty(notice))
+        {
+            sb.Append(notice).Append("\n\n");
+        }
+        sb.Append($"Successfully edited {filePath}{note}.");
+        if (match.Strategy != MatchStrategy.Exact)
+        {
+            sb.Append("\nCAUTION: old_string matched approximately — verify this edit landed where you intended (re-Read the region if unsure).");
+        }
+        sb.Append($"\nEdit location: lines {startLine}-{startLine + oldLines - 1} ({oldLines} line(s) replaced with {newLines} line(s)).");
+        sb.Append($"\nFile now has {newTotal} lines (was {oldTotal}).");
         if (!string.IsNullOrEmpty(diff))
         {
-            message += "\n\n" + diff;
+            sb.Append("\n\n").Append(diff);
         }
 
-        return new ToolChatMessage(toolCall.Id, ContextManager.TruncateToolResult(message, Configuration.GetMaxToolResultTokens()));
+        return new ToolChatMessage(toolCall.Id, ContextManager.TruncateToolResult(sb.ToString(), Configuration.GetMaxToolResultTokens()));
+    }
+
+    private static int CountNewlines(string text, int start, int count)
+    {
+        int total = 0;
+        for (int i = start; i < start + count; i++)
+        {
+            if (text[i] == '\n') total++;
+        }
+        return total;
+    }
+
+    private static ToolChatMessage ApplyReplaceAllEditAndCreateResult(
+        ChatToolCall toolCall,
+        string filePath,
+        string safePath,
+        string content,
+        string oldString,
+        string newString,
+        string? notice = null)
+    {
+        var matches = MatchFinder.FindAllExactMatches(content, oldString);
+        if (matches.Count == 0)
+        {
+            return CreateErrorResult(toolCall, $"Error: Edit tool could not find the specified 'old_string' in '{filePath}'. The old_string does not match any text in the file — it likely contains lines you did not actually read, or text you invented. Use Read with start_line/end_line to fetch the exact target lines, then retry with old_string copied verbatim from the Read output. Never invent or reconstruct lines from memory.");
+        }
+
+        string eol = content.Contains("\r\n") ? "\r\n" : "\n";
+        string normalizedNew = newString.Replace("\r\n", "\n");
+        if (eol == "\r\n")
+        {
+            normalizedNew = normalizedNew.Replace("\n", "\r\n");
+        }
+
+        var sb = new System.Text.StringBuilder(content);
+        for (int i = matches.Count - 1; i >= 0; i--)
+        {
+            sb.Remove(matches[i].Index, matches[i].Length);
+            sb.Insert(matches[i].Index, normalizedNew);
+        }
+        string newContent = sb.ToString();
+
+        UndoJournal.Record(safePath, content, existedBefore: true, ToolHandler.EditFunctionName);
+        System.IO.File.WriteAllText(safePath, newContent);
+        FileStateJournal.RecordWrite(safePath, newContent);
+
+        string? diff = TryGenerateDiff(content, newContent, filePath);
+        int oldTotal = CountNewlines(content, 0, content.Length) + 1;
+        int newTotal = CountNewlines(newContent, 0, newContent.Length) + 1;
+
+        var msg = new System.Text.StringBuilder();
+        if (!string.IsNullOrEmpty(notice))
+        {
+            msg.Append(notice).Append("\n\n");
+        }
+        msg.Append($"Successfully edited {filePath}: replaced {matches.Count} occurrence(s) of the old_string.");
+        msg.Append($"\nFile now has {newTotal} lines (was {oldTotal}).");
+        if (!string.IsNullOrEmpty(diff))
+        {
+            msg.Append("\n\n").Append(diff);
+        }
+
+        return new ToolChatMessage(toolCall.Id, ContextManager.TruncateToolResult(msg.ToString(), Configuration.GetMaxToolResultTokens()));
     }
 
     private static string GetMatchNote(MatchResult match) => match.Strategy switch
@@ -784,7 +1071,7 @@ public static class ResponseHandler
         catch (OperationCanceledException)
         {
             process.Kill(entireProcessTree: true);
-            await process.WaitForExitAsync();
+            await process.WaitForExitAsync(CancellationToken.None);
             var stdout = await SafeReadTask(stdoutTask);
             var stderr = await SafeReadTask(stderrTask);
             return (stdout, stderr, true);

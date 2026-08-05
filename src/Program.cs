@@ -34,6 +34,7 @@ while (true)
     {
         session.Reset();
         UndoJournal.Clear();
+        FileStateJournal.Clear();
         using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
             await Console.Error.WriteLineAsync("Session reset.");
         continue;

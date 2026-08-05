@@ -214,6 +214,33 @@ public class ResponseHandlerToolTests
     }
 
     [Fact]
+    public async Task Edit_Success_ReportsLineSpanAndLineCounts()
+    {
+        using var ws = new TempWorkspace();
+        ws.WriteFile("file.txt", "line1\nline2\nline3\nline4\n");
+
+        var message = await RunAsync(ToolHandler.EditFunctionName, new { file_path = "file.txt", old_string = "line2\nline3", new_string = "A\nB\nC" });
+
+        string text = ToolText(message!);
+        Assert.Contains("Edit location: lines 2-3 (2 line(s) replaced with 3 line(s)).", text);
+        Assert.Contains("File now has 6 lines (was 5).", text);
+        Assert.Equal("line1\nA\nB\nC\nline4\n", ws.ReadFile("file.txt"));
+    }
+
+    [Fact]
+    public async Task Edit_FuzzyMatch_IncludesCaution()
+    {
+        using var ws = new TempWorkspace();
+        ws.WriteFile("file.txt", "  padded line  \n  other  \n");
+
+        var message = await RunAsync(ToolHandler.EditFunctionName, new { file_path = "file.txt", old_string = "padded line\nother", new_string = "changed line\nother" });
+
+        string text = ToolText(message!);
+        Assert.Contains("CAUTION: old_string matched approximately", text);
+        Assert.Contains("matched using NormalizedWhitespace comparison", text);
+    }
+
+    [Fact]
     public async Task Edit_FuzzyWhitespace_ReportsStrategy()
     {
         using var ws = new TempWorkspace();
@@ -270,6 +297,60 @@ public class ResponseHandlerToolTests
     }
 
     [Fact]
+    public async Task Edit_ReplaceAll_ReplacesEveryExactOccurrence()
+    {
+        using var ws = new TempWorkspace();
+        ws.WriteFile("file.txt", "foo\nbar\nfoo\nbaz\nfoo\n");
+
+        var message = await RunAsync(ToolHandler.EditFunctionName, new { file_path = "file.txt", old_string = "foo", new_string = "FOO", replace_all = "true" });
+
+        string text = ToolText(message!);
+        Assert.Contains("Successfully edited file.txt", text);
+        Assert.Contains("replaced 3 occurrence(s)", text);
+        Assert.Equal("FOO\nbar\nFOO\nbaz\nFOO\n", ws.ReadFile("file.txt"));
+    }
+
+    [Fact]
+    public async Task Edit_ReplaceAll_NoExactMatches_ReturnsError()
+    {
+        using var ws = new TempWorkspace();
+        ws.WriteFile("file.txt", "foo\nbar\n");
+
+        var message = await RunAsync(ToolHandler.EditFunctionName, new { file_path = "file.txt", old_string = "zzz", new_string = "x", replace_all = "true" });
+
+        string text = ToolText(message!);
+        Assert.Contains("Edit tool could not find the specified 'old_string'", text);
+        Assert.Equal("foo\nbar\n", ws.ReadFile("file.txt"));
+    }
+
+    [Fact]
+    public async Task Edit_ReplaceAll_WithoutFlag_StillRejectsAmbiguousMatches()
+    {
+        using var ws = new TempWorkspace();
+        ws.WriteFile("file.txt", "foo\nbar\nfoo\n");
+
+        var message = await RunAsync(ToolHandler.EditFunctionName, new { file_path = "file.txt", old_string = "foo", new_string = "FOO" });
+
+        string text = ToolText(message!);
+        Assert.Contains("Error", text);
+        Assert.Contains("Add more surrounding context", text);
+        Assert.Equal("foo\nbar\nfoo\n", ws.ReadFile("file.txt"));
+    }
+
+    [Fact]
+    public async Task Edit_ReplaceAll_OnCRLFFile_PreservesLineEndings()
+    {
+        using var ws = new TempWorkspace();
+        ws.WriteFile("file.txt", "foo\r\nfoo\r\n");
+
+        var message = await RunAsync(ToolHandler.EditFunctionName, new { file_path = "file.txt", old_string = "foo", new_string = "FOO", replace_all = "true" });
+
+        string text = ToolText(message!);
+        Assert.Contains("replaced 2 occurrence(s)", text);
+        Assert.Equal("FOO\r\nFOO\r\n", ws.ReadFile("file.txt"));
+    }
+
+    [Fact]
     public async Task Edit_NoMatch_NoSuggestionWhenNothingSimilar()
     {
         using var ws = new TempWorkspace();
@@ -294,6 +375,137 @@ public class ResponseHandlerToolTests
     }
 
     [Fact]
+    public async Task Edit_NeverReadFile_Refuses()
+    {
+        using var ws = new TempWorkspace();
+        FileStateJournal.Clear();
+        System.IO.File.WriteAllText(System.IO.Path.Combine(ws.Root, "file.txt"), "foo\nbar\n");
+
+        var message = await RunAsync(ToolHandler.EditFunctionName, new { file_path = "file.txt", old_string = "bar", new_string = "BAZ" });
+
+        string text = ToolText(message!);
+        Assert.Contains("was not read in this session", text);
+        Assert.Contains("Use the Read tool to read the file first", text);
+        Assert.Equal("foo\nbar\n", ws.ReadFile("file.txt"));
+    }
+
+    [Fact]
+    public async Task Edit_AfterRead_Succeeds()
+    {
+        using var ws = new TempWorkspace();
+        FileStateJournal.Clear();
+        ws.WriteFile("file.txt", "foo\nbar\n");
+
+        await RunAsync(ToolHandler.ReadFunctionName, new { file_path = "file.txt" });
+        var message = await RunAsync(ToolHandler.EditFunctionName, new { file_path = "file.txt", old_string = "bar", new_string = "BAZ" });
+
+        Assert.Contains("Successfully edited file.txt", ToolText(message!));
+        Assert.Equal("foo\nBAZ\n", ws.ReadFile("file.txt"));
+    }
+
+    [Fact]
+    public async Task Edit_StaleFile_WarnsAndApplies()
+    {
+        using var ws = new TempWorkspace();
+        FileStateJournal.Clear();
+        ws.WriteFile("file.txt", "foo\nbar\n");
+        System.IO.File.WriteAllText(System.IO.Path.Combine(ws.Root, "file.txt"), "foo\nCHANGED\n");
+
+        var message = await RunAsync(ToolHandler.EditFunctionName, new { file_path = "file.txt", old_string = "CHANGED", new_string = "changed" });
+
+        string text = ToolText(message!);
+        Assert.Contains("changed on disk since the session last read or wrote it", text);
+        Assert.Contains("Successfully edited file.txt", text);
+        Assert.Equal("foo\nchanged\n", ws.ReadFile("file.txt"));
+    }
+
+    [Fact]
+    public async Task Edit_DisproportionateMatch_Refuses()
+    {
+        using var ws = new TempWorkspace();
+        FileStateJournal.Clear();
+        var lines = new List<string> { "x" };
+        for (int i = 0; i < 8; i++) lines.Add($"filler {i}");
+        lines.Add("y");
+        ws.WriteFile("file.txt", string.Join("\n", lines) + "\n");
+
+        var message = await RunAsync(ToolHandler.EditFunctionName, new { file_path = "file.txt", old_string = "x\ny", new_string = "z" });
+
+        string text = ToolText(message!);
+        Assert.Contains("matched span is much larger than old_string", text);
+        Assert.Equal(string.Join("\n", lines) + "\n", ws.ReadFile("file.txt"));
+    }
+
+    [Fact]
+    public async Task Edit_CRLFFile_PreservesLineEndings()
+    {
+        using var ws = new TempWorkspace();
+        FileStateJournal.Clear();
+        ws.WriteFile("file.txt", "a\r\nb\r\nc\r\n");
+
+        var message = await RunAsync(ToolHandler.EditFunctionName, new { file_path = "file.txt", old_string = "a\nb", new_string = "A\nB" });
+
+        string text = ToolText(message!);
+        Assert.Contains("Successfully edited file.txt", text);
+        Assert.DoesNotContain("CAUTION", text);
+        Assert.Equal("A\r\nB\r\nc\r\n", ws.ReadFile("file.txt"));
+    }
+
+    [Fact]
+    public async Task Edit_DeleteLine_RemovesTrailingNewline()
+    {
+        using var ws = new TempWorkspace();
+        FileStateJournal.Clear();
+        ws.WriteFile("file.txt", "line1\nline2\nline3\n");
+
+        var message = await RunAsync(ToolHandler.EditFunctionName, new { file_path = "file.txt", old_string = "line2", new_string = "" });
+
+        Assert.Contains("Successfully edited file.txt", ToolText(message!));
+        Assert.Equal("line1\nline3\n", ws.ReadFile("file.txt"));
+    }
+
+    [Fact]
+    public async Task Read_MissingFile_SuggestsSimilarNames()
+    {
+        using var ws = new TempWorkspace();
+        ws.WriteFile("missing2.txt", "x");
+        ws.WriteFile("other.txt", "y");
+
+        var message = await RunAsync(ToolHandler.ReadFunctionName, new { file_path = "missing.txt" });
+
+        string text = ToolText(message!);
+        Assert.Contains("was not found", text);
+        Assert.Contains("Did you mean one of these?", text);
+        Assert.Contains("missing2.txt", text);
+    }
+
+    [Fact]
+    public async Task Read_BinaryFile_Rejected()
+    {
+        using var ws = new TempWorkspace();
+        ws.WriteFile("data.bin", "not really binary but the extension says so");
+
+        var message = await RunAsync(ToolHandler.ReadFunctionName, new { file_path = "data.bin" });
+
+        Assert.Contains("binary file", ToolText(message!));
+    }
+
+    [Fact]
+    public async Task Read_Directory_ListsEntries()
+    {
+        using var ws = new TempWorkspace();
+        ws.WriteFile("subdir\\one.txt", "1");
+        ws.WriteFile("subdir\\two.cs", "2");
+
+        var message = await RunAsync(ToolHandler.ReadFunctionName, new { file_path = "subdir" });
+
+        string text = ToolText(message!);
+        Assert.Contains("Directory listing of subdir", text);
+        Assert.Contains("one.txt", text);
+        Assert.Contains("two.cs", text);
+    }
+
+    [Fact]
     public async Task Edit_AmbiguousMatch_ReturnsError()
     {
         using var ws = new TempWorkspace();
@@ -301,7 +513,8 @@ public class ResponseHandlerToolTests
 
         var message = await RunAsync(ToolHandler.EditFunctionName, new { file_path = "file.txt", old_string = "foo\nbar", new_string = "baz" });
 
-        Assert.Contains("Edit tool could not find the specified 'old_string'", ToolText(message!));
+        Assert.Contains("matches the file in more than one place", ToolText(message!));
+        Assert.Contains("make it unique", ToolText(message!));
         Assert.Equal("foo\nbar\nxxx\nfoo\nbar\n", ws.ReadFile("file.txt"));
     }
 

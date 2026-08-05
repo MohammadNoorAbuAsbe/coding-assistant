@@ -270,14 +270,37 @@ public static class Configuration
     {
         var value = Environment.GetEnvironmentVariable("AUTO_VERIFY");
         if (bool.TryParse(value, out var result)) return result;
-        // Off by default for local models: each verify rebuilds the project,
-        // which makes the agent loop slow on small/slow hardware.
-        return GetProvider() != OllamaName;
+        // On by default: a post-edit build surfaces compile errors immediately,
+        // which is the strongest guard against hallucinated refactors. Disable
+        // with AUTO_VERIFY=false on very slow hardware.
+        return true;
+    }
+
+    /// <summary>
+    /// Fraction of the context window reserved for the next model response.
+    /// Message history is trimmed to this fraction so the API request never
+    /// fills the window and leaves no room for output.
+    /// </summary>
+    public static double GetContextUsageFraction()
+    {
+        var value = Environment.GetEnvironmentVariable("MAX_CONTEXT_USAGE");
+        if (double.TryParse(value, out var result) && result > 0 && result <= 1)
+            return result;
+        return 0.8;
     }
 
     public static string GetVerifyCommand()
     {
         return Environment.GetEnvironmentVariable("VERIFY_COMMAND") ?? "dotnet build --nologo -v q";
+    }
+
+    /// <summary>
+    /// Returns the VERIFY_COMMAND environment variable when explicitly set,
+    /// or null when the default dotnet command should be used instead.
+    /// </summary>
+    public static string? GetVerifyCommandOverride()
+    {
+        return Environment.GetEnvironmentVariable("VERIFY_COMMAND");
     }
 
     public static int GetVerifyTimeout()

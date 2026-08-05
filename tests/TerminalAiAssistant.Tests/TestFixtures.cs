@@ -41,6 +41,9 @@ public sealed class TempWorkspace : IDisposable
         string? dir = Path.GetDirectoryName(fullPath);
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
         File.WriteAllText(fullPath, content);
+        // Emulates the session's Write tool: the file's content is now known,
+        // so subsequent Edit/ApplyPatch calls are allowed (not "never read").
+        FileStateJournal.RecordWrite(fullPath, content);
         return fullPath;
     }
 

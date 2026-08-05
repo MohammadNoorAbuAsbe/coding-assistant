@@ -28,7 +28,12 @@ public static class ChatOrchestrator
 
         session.Messages.Add(new UserChatMessage(prompt));
         await RunAgentLoop(client, session.Messages, options, maxIterations, contextWindowSize, cancellationToken);
-        session.Messages = ContextManager.TruncateMessages(session.Messages, contextWindowSize);
+        session.Messages = ContextManager.TruncateMessages(session.Messages, GetMessageBudget(contextWindowSize));
+    }
+
+    private static int GetMessageBudget(int contextWindowSize)
+    {
+        return (int)(contextWindowSize * Configuration.GetContextUsageFraction());
     }
 
     internal static async Task<string> RunSubAgent(ChatClient client, List<ChatMessage> messages, int? maxIterations, int contextWindowSize, CancellationToken cancellationToken = default)
@@ -98,11 +103,7 @@ public static class ChatOrchestrator
                 {
                     Console.WriteLine();
 
-                    if (LooksLikeSkippedEdit(responseContent)
-                        && (maxIterations == null || iteration < maxIterations - 1)
-                        && !UserRequestedPreviewOnly(messages)
-                        && skippedEditNudges < MaxSkippedEditNudges
-                        && !PreviousTurnHadToolCalls(messages))
+                    if (ShouldNudge(responseContent, messages, iteration, maxIterations, skippedEditNudges))
                     {
                         skippedEditNudges++;
                         messages.Add(new AssistantChatMessage(responseContent));
@@ -404,7 +405,7 @@ public static class ChatOrchestrator
 
         if (fileModified && Configuration.GetAutoVerify() && !cancellationToken.IsCancellationRequested)
         {
-            if (BuildVerifier.HasDotnetProject())
+            if (BuildVerifier.ResolveVerifyCommand() != null)
             {
                 using (ConsoleStyler.WithColor(ConsoleColor.Blue))
                     await Console.Error.WriteLineAsync("\n— Build Verification —");
@@ -415,11 +416,11 @@ public static class ChatOrchestrator
             else
             {
                 using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
-                    await Console.Error.WriteLineAsync("  Build verification skipped: no .sln or .csproj found in workspace (set AUTO_VERIFY=false to disable).");
+                    await Console.Error.WriteLineAsync("  Build verification skipped: no supported build system detected (set VERIFY_COMMAND to enable, AUTO_VERIFY=false to disable).");
             }
         }
 
-        return ContextManager.TruncateMessages(messages, contextWindowSize);
+        return ContextManager.TruncateMessages(messages, GetMessageBudget(contextWindowSize));
     }
 
     private static void LogBuildVerification(ChatMessage message)
@@ -587,6 +588,15 @@ public static class ChatOrchestrator
             response.Contains(".json");
 
         return mentionsSourceFile;
+    }
+
+    private static bool ShouldNudge(string responseContent, List<ChatMessage> messages, int iteration, int? maxIterations, int skippedEditNudges)
+    {
+        return LooksLikeSkippedEdit(responseContent)
+            && (maxIterations == null || iteration < maxIterations - 1)
+            && !UserRequestedPreviewOnly(messages)
+            && skippedEditNudges < MaxSkippedEditNudges
+            && !PreviousTurnHadToolCalls(messages);
     }
 
     private static bool UserRequestedPreviewOnly(List<ChatMessage> messages)

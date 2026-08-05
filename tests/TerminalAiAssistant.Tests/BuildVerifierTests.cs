@@ -54,14 +54,14 @@ public class BuildVerifierTests
     }
 
     [Fact]
-    public void GetAutoVerify_DefaultsOffForLocal()
+    public void GetAutoVerify_DefaultsOnForAllProviders()
     {
         using var ws = new TempWorkspace();
         ws.SaveEnv("AUTO_VERIFY");
         Configuration.LoadProviderConfigs();
         Configuration.SetProvider("ollama");
 
-        Assert.False(Configuration.GetAutoVerify());
+        Assert.True(Configuration.GetAutoVerify());
     }
 
     [Fact]
@@ -97,11 +97,99 @@ public class BuildVerifierTests
     }
 
     [Fact]
+    public void ResolveVerifyCommand_EnvOverrideAlwaysWins()
+    {
+        using var ws = new TempWorkspace();
+        ws.SaveEnv("VERIFY_COMMAND");
+        Environment.SetEnvironmentVariable("VERIFY_COMMAND", "python -m compileall -q .");
+
+        Assert.Equal("python -m compileall -q .", BuildVerifier.ResolveVerifyCommand());
+    }
+
+    [Fact]
+    public void ResolveVerifyCommand_DetectsDotnetProject()
+    {
+        using var ws = new TempWorkspace();
+        ws.SaveEnv("VERIFY_COMMAND");
+        ws.WriteFile("App.csproj", "<Project Sdk=\"Microsoft.NET.Sdk\" />");
+
+        Assert.Equal("dotnet build --nologo -v q", BuildVerifier.ResolveVerifyCommand());
+    }
+
+    [Fact]
+    public void ResolveVerifyCommand_DetectsTypeScriptProjectWithLocalTsc()
+    {
+        using var ws = new TempWorkspace();
+        ws.SaveEnv("VERIFY_COMMAND");
+        ws.WriteFile("tsconfig.json", "{ }");
+        ws.WriteFile("node_modules\\.bin\\tsc.cmd", "@echo off");
+
+        string? command = BuildVerifier.ResolveVerifyCommand();
+
+        Assert.NotNull(command);
+        Assert.Contains("tsc.cmd", command);
+        Assert.Contains("--noEmit", command);
+    }
+
+    [Fact]
+    public void ResolveVerifyCommand_NullWhenNoSupportedBuildSystem()
+    {
+        using var ws = new TempWorkspace();
+        ws.SaveEnv("VERIFY_COMMAND");
+        ws.WriteFile("README.md", "# nothing here");
+        ws.WriteFile("tsconfig.json", "{ }");
+
+        Assert.Null(BuildVerifier.ResolveVerifyCommand());
+    }
+
+    [Fact]
+    public void ResolveVerifyCommand_NullWhenEmptyWorkspace()
+    {
+        using var ws = new TempWorkspace();
+        ws.SaveEnv("VERIFY_COMMAND");
+
+        Assert.Null(BuildVerifier.ResolveVerifyCommand());
+    }
+
+    [Fact]
     public void GetVerifyTimeout_DefaultsTo120Seconds()
     {
         using var ws = new TempWorkspace();
         ws.SaveEnv("VERIFY_TIMEOUT");
 
         Assert.Equal(120000, Configuration.GetVerifyTimeout());
+    }
+
+    [Fact]
+    public void ParseBuildErrors_ExtractsCompilerErrorLines()
+    {
+        string output = "some noise\n" +
+            "C:\\repo\\src\\Foo.cs(12,5): error CS0103: The name 'Bar' does not exist in the current context\n" +
+            "C:\\repo\\src\\Foo.cs(42): error CS1002: ; expected\n" +
+            "warning CS0219: unused (not an error line)\n" +
+            "non-matching text here\n";
+
+        string errors = BuildVerifier.ParseBuildErrors(output);
+
+        Assert.Contains("Foo.cs(12,5): error CS0103", errors);
+        Assert.Contains("Foo.cs(42): error CS1002", errors);
+        Assert.DoesNotContain("warning", errors);
+        Assert.DoesNotContain("non-matching", errors);
+    }
+
+    [Fact]
+    public void ParseBuildErrors_EmptyWhenNoCompilerErrors()
+    {
+        Assert.Equal("", BuildVerifier.ParseBuildErrors("Build succeeded.\nAll good here."));
+        Assert.Equal("", BuildVerifier.ParseBuildErrors(""));
+    }
+
+    [Fact]
+    public void ParseBuildErrors_DeduplicatesAndCaps()
+    {
+        string line = "src\\Foo.cs(1,1): error CS0001: repeated message\n";
+        string output = line + line + line;
+
+        Assert.Equal("  " + line.TrimEnd('\n'), BuildVerifier.ParseBuildErrors(output));
     }
 }

@@ -21,16 +21,115 @@ internal static class MatchFinder
     {
         if (string.IsNullOrEmpty(oldString)) return null;
 
-        var result = FindBestMatchCore(content, oldString);
-        if (result != null) return result;
-
-        string stripped = StripReadLineNumberPrefixes(oldString);
-        if (stripped != oldString)
+        bool normalizeCrlf = content.Contains("\r\n", StringComparison.Ordinal);
+        List<int>? crlfLfStarts = null;
+        string matchContent = content;
+        string matchOld = oldString;
+        if (normalizeCrlf)
         {
-            result = FindBestMatchCore(content, stripped);
+            crlfLfStarts = ComputeCrlfLfStarts(content);
+            matchContent = content.Replace("\r\n", "\n");
+            matchOld = oldString.Replace("\r\n", "\n");
+        }
+
+        var result = FindBestMatchCore(matchContent, matchOld);
+        if (result == null)
+        {
+            string stripped = StripReadLineNumberPrefixes(matchOld);
+            if (stripped != matchOld)
+            {
+                result = FindBestMatchCore(matchContent, stripped);
+            }
+        }
+
+        if (result != null && crlfLfStarts != null)
+        {
+            int rawStart = MapLfToRaw(crlfLfStarts, result.Index);
+            int rawEnd = MapLfToRaw(crlfLfStarts, result.Index + result.Length);
+            result = result with { Index = rawStart, Length = rawEnd - rawStart };
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Returns every exact occurrence of oldString as raw (index, length) pairs,
+    /// EOL-normalized so LF and CRLF files both match. Used by replace_all edits,
+    /// which only replace exact matches.
+    /// </summary>
+    internal static List<(int Index, int Length)> FindAllExactMatches(string content, string oldString)
+    {
+        var matches = new List<(int Index, int Length)>();
+        if (string.IsNullOrEmpty(oldString)) return matches;
+
+        bool normalizeCrlf = content.Contains("\r\n", StringComparison.Ordinal);
+        List<int>? crlfLfStarts = null;
+        string matchContent = content;
+        string matchOld = oldString;
+        if (normalizeCrlf)
+        {
+            crlfLfStarts = ComputeCrlfLfStarts(content);
+            matchContent = content.Replace("\r\n", "\n");
+            matchOld = oldString.Replace("\r\n", "\n");
+        }
+
+        int pos = 0;
+        while (pos <= matchContent.Length - matchOld.Length)
+        {
+            int idx = matchContent.IndexOf(matchOld, pos, StringComparison.Ordinal);
+            if (idx < 0) break;
+            int length = matchOld.Length;
+            if (crlfLfStarts != null)
+            {
+                int rawStart = MapLfToRaw(crlfLfStarts, idx);
+                int rawEnd = MapLfToRaw(crlfLfStarts, idx + length);
+                matches.Add((rawStart, rawEnd - rawStart));
+            }
+            else
+            {
+                matches.Add((idx, length));
+            }
+            pos = idx + matchOld.Length;
+        }
+
+        return matches;
+    }
+
+    /// <summary>
+    /// Returns the LF-normalized positions at which each "\r\n" pair begins.
+    /// For the j-th CRLF pair at raw position r, its LF position is r - j
+    /// (each earlier pair consumes one extra character in the raw text).
+    /// </summary>
+    private static List<int> ComputeCrlfLfStarts(string content)
+    {
+        var starts = new List<int>();
+        int pairIndex = 0;
+        for (int i = 0; i + 1 < content.Length; i++)
+        {
+            if (content[i] == '\r' && content[i + 1] == '\n')
+            {
+                starts.Add(i - pairIndex);
+                pairIndex++;
+                i++;
+            }
+        }
+        return starts;
+    }
+
+    /// <summary>
+    /// Maps an LF-normalized position back to the raw (possibly CRLF) content
+    /// position by adding the number of CRLF pairs that precede it.
+    /// </summary>
+    private static int MapLfToRaw(List<int> crlfLfStarts, int lfPosition)
+    {
+        int lo = 0, hi = crlfLfStarts.Count;
+        while (lo < hi)
+        {
+            int mid = (lo + hi) / 2;
+            if (crlfLfStarts[mid] < lfPosition) lo = mid + 1;
+            else hi = mid;
+        }
+        return lfPosition + lo;
     }
 
     private static MatchResult? FindBestMatchCore(string content, string oldString)

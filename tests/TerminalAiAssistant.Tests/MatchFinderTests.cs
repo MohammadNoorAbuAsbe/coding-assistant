@@ -93,14 +93,28 @@ public class MatchFinderTests
     }
 
     [Fact]
-    public void CrlfVsLf_MatchesViaWhitespaceTier()
+    public void CrlfContent_LfOldString_MatchesExactlyWithMappedOffsets()
     {
         var content = "alpha\r\nbeta\r\ngamma\r\n";
         var result = MatchFinder.FindBestMatch(content, "alpha\nbeta");
 
         Assert.NotNull(result);
-        Assert.Equal(MatchStrategy.NormalizedWhitespace, result.Strategy);
+        Assert.Equal(MatchStrategy.Exact, result.Strategy);
         Assert.Equal(0, result.Index);
+        Assert.Equal(11, result.Length); // "alpha\r\nbeta" in raw content
+        Assert.Equal("alpha\r\nbeta", content.Substring(result.Index, result.Length));
+    }
+
+    [Fact]
+    public void CrlfContent_MatchLaterInFile_MapsOffsetsToRawPositions()
+    {
+        var content = "line one\r\nline two\r\nline three\r\n";
+        var result = MatchFinder.FindBestMatch(content, "line two\nline three");
+
+        Assert.NotNull(result);
+        Assert.Equal(10, result.Index); // raw offset after "line one\r\n"
+        Assert.Equal(20, result.Length); // "line two\r\nline three"
+        Assert.Equal("line two\r\nline three", content.Substring(result.Index, result.Length));
     }
 
     [Fact]

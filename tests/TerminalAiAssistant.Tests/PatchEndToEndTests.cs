@@ -47,6 +47,38 @@ public class PatchEndToEndTests
     }
 
     [Fact]
+    public async Task ApplyPatch_NeverReadFile_Refuses()
+    {
+        using var ws = new TempWorkspace();
+        FileStateJournal.Clear();
+        System.IO.File.WriteAllText(System.IO.Path.Combine(ws.Root, "file.txt"), "one\ntwo\nthree\n");
+
+        var message = await RunApplyPatchAsync(ws, "file.txt",
+            "@@ -1,3 +1,3 @@\n one\n-two\n+TWO\n three");
+
+        string text = ToolText(message!);
+        Assert.Contains("was not read in this session", text);
+        Assert.Equal("one\ntwo\nthree\n", ws.ReadFile("file.txt"));
+    }
+
+    [Fact]
+    public async Task ApplyPatch_StaleFile_WarnsAndApplies()
+    {
+        using var ws = new TempWorkspace();
+        FileStateJournal.Clear();
+        ws.WriteFile("file.txt", "one\ntwo\nthree\n");
+        System.IO.File.WriteAllText(System.IO.Path.Combine(ws.Root, "file.txt"), "one\nTWO\nthree\n");
+
+        var message = await RunApplyPatchAsync(ws, "file.txt",
+            "@@ -1,3 +1,3 @@\n one\n-TWO\n+two\n three");
+
+        string text = ToolText(message!);
+        Assert.Contains("changed on disk since the session last read or wrote it", text);
+        Assert.Contains("Successfully applied", text);
+        Assert.Equal("one\ntwo\nthree\n", ws.ReadFile("file.txt"));
+    }
+
+    [Fact]
     public async Task ApplyPatch_MultiHunk_AppliesAllInOneCall()
     {
         using var ws = new TempWorkspace();

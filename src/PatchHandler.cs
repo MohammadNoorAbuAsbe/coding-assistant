@@ -29,7 +29,19 @@ internal static partial class PatchHandler
                     return CreateNewFile(toolCall, safePath, args.file_path, hunks);
                 }
 
-                return ApplyHunks(toolCall, safePath, args.file_path, hunks);
+                string raw = System.IO.File.ReadAllText(safePath);
+                if (!FileStateJournal.HasState(safePath))
+                {
+                    return ResponseHandler.CreateErrorResult(toolCall, $"Error: ApplyPatch cannot modify '{args.file_path}' because the file was not read in this session. Use the Read tool to read the file first, then retry the patch.");
+                }
+
+                string? notice = null;
+                if (FileStateJournal.IsStale(safePath, raw))
+                {
+                    notice = $"Warning: '{args.file_path}' changed on disk since the session last read or wrote it. The patch was applied to the current content, but Read the file to verify the result.";
+                }
+
+                return ApplyHunks(toolCall, safePath, args.file_path, hunks, notice);
             });
     }
 
@@ -88,7 +100,7 @@ internal static partial class PatchHandler
         return new ToolChatMessage(toolCall.Id, $"Created new file {displayPath} ({hunks.Count} hunk(s), +{added} lines).");
     }
 
-    private static ToolChatMessage ApplyHunks(ChatToolCall toolCall, string safePath, string displayPath, List<Hunk> hunks)
+    private static ToolChatMessage ApplyHunks(ChatToolCall toolCall, string safePath, string displayPath, List<Hunk> hunks, string? notice = null)
     {
         string raw = System.IO.File.ReadAllText(safePath);
         var originalLines = SplitLines(raw).ToList();
@@ -116,8 +128,9 @@ internal static partial class PatchHandler
         string content = JoinLines(originalLines.Select(TrimCR), eol, trailingNewline);
         UndoJournal.Record(safePath, raw, existedBefore: true, ToolHandler.ApplyPatchFunctionName);
         System.IO.File.WriteAllText(safePath, content);
+        FileStateJournal.RecordWrite(safePath, content);
 
-        return BuildApplySummary(toolCall, displayPath, raw, content, placements, noOps);
+        return BuildApplySummary(toolCall, displayPath, raw, content, placements, noOps, notice);
     }
 
     private static List<HunkPlacement> ComputePlacements(ChatToolCall toolCall, string displayPath, List<Hunk> hunks, List<string> matchLines, out int noOps, out ToolChatMessage? error)
@@ -167,7 +180,7 @@ internal static partial class PatchHandler
         return fileEndsWithNewline;
     }
 
-    private static ToolChatMessage BuildApplySummary(ChatToolCall toolCall, string displayPath, string raw, string content, List<HunkPlacement> placements, int noOps)
+    private static ToolChatMessage BuildApplySummary(ChatToolCall toolCall, string displayPath, string raw, string content, List<HunkPlacement> placements, int noOps, string? notice = null)
     {
         int totalAdded = placements.Sum(p => p.Hunk.AddedCount);
         int totalRemoved = placements.Sum(p => p.Hunk.RemovedCount);
@@ -182,8 +195,16 @@ internal static partial class PatchHandler
             diff = null;
         }
 
+        int oldTotal = CountNewlines(raw);
+        int newTotal = CountNewlines(content);
+
         var sb = new StringBuilder();
+        if (!string.IsNullOrEmpty(notice))
+        {
+            sb.Append(notice).Append("\n\n");
+        }
         sb.Append($"Successfully applied {placements.Count} hunk(s) to {displayPath} (+{totalAdded} -{totalRemoved} lines).");
+        sb.Append($"\nFile now has {newTotal} lines (was {oldTotal}).");
         foreach (var placement in placements)
         {
             sb.Append($"\n  hunk {placement.HunkNumber}: {DescribeHunkMatch(placement.Hunk, placement.Strategy, placement.Confidence)}");
@@ -197,6 +218,16 @@ internal static partial class PatchHandler
             sb.Append("\n\n").Append(diff);
         }
         return new ToolChatMessage(toolCall.Id, ContextManager.TruncateToolResult(sb.ToString(), Configuration.GetMaxToolResultTokens()));
+    }
+
+    private static int CountNewlines(string text)
+    {
+        int count = 0;
+        for (int i = 0; i < text.Length; i++)
+        {
+            if (text[i] == '\n') count++;
+        }
+        return count;
     }
 
     private static string DescribeHunkMatch(Hunk hunk, MatchStrategy strategy, double? confidence)
