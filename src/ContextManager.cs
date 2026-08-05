@@ -145,21 +145,13 @@ public static class ContextManager
         for (int i = messages.Count - 1; i >= 0; i--)
         {
             var msg = messages[i];
-            if (msg is ToolChatMessage toolMsg && msg.Content != null)
+            if (msg is ToolChatMessage toolMsg && toolMsg.Content != null && todoState == null && ExtractText(toolMsg.Content).Contains("## Task List"))
             {
-                string text = ExtractText(toolMsg.Content);
-                if (todoState == null && text.Contains("## Task List"))
-                {
-                    todoState = text;
-                }
+                todoState = ExtractText(toolMsg.Content);
             }
-            else if (msg is UserChatMessage userMsg && msg.Content != null)
+            else if (msg is UserChatMessage userMsg && userMsg.Content != null && buildState == null && ExtractText(userMsg.Content).StartsWith("Automatic build verification", StringComparison.Ordinal))
             {
-                string text = ExtractText(userMsg.Content);
-                if (buildState == null && text.StartsWith("Automatic build verification", StringComparison.Ordinal))
-                {
-                    buildState = text;
-                }
+                buildState = ExtractText(userMsg.Content);
             }
         }
 

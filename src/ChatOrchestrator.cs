@@ -546,9 +546,9 @@ public static class ChatOrchestrator
                 return value.GetString();
             }
         }
-        catch (System.Exception)
+        catch (System.Exception ex)
         {
-            // Log the exception or handle it appropriately if needed.
+            Console.Error.WriteLine($"Failed to parse error message from API response: {ex.Message}");
         }
         return null;
     }
