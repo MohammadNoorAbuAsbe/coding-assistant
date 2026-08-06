@@ -66,7 +66,7 @@ public static class MenuHandler
             if (line is null) break;
             if (lines.Count == 0 && string.IsNullOrWhiteSpace(line)) return "";
             if (string.IsNullOrWhiteSpace(line)) break;
-            if (lines.Count == 0 && line.TrimStart().StartsWith("/")) return line.Trim();
+            if (lines.Count == 0 && line.TrimStart().StartsWith('/')) return line.Trim();
             lines.Add(line);
         }
         return string.Join(Environment.NewLine, lines).Trim();

@@ -289,6 +289,38 @@ public static class Configuration
         return 0.8;
     }
 
+    /// <summary>
+    /// Whether dropped history is summarized by the model (true by default).
+    /// Set LLM_COMPACTION=0 to use the deterministic template summary.
+    /// </summary>
+    public static bool GetLlmCompactionEnabled()
+    {
+        var value = Environment.GetEnvironmentVariable("LLM_COMPACTION");
+        if (!string.IsNullOrEmpty(value))
+        {
+            return value == "1" || value.Equals("true", StringComparison.OrdinalIgnoreCase);
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Token ceiling for the compaction summary inserted into history.
+    /// </summary>
+    public static int GetMaxCompactionTokens()
+    {
+        var value = Environment.GetEnvironmentVariable("MAX_COMPACTION_TOKENS");
+        return int.TryParse(value, out var result) && result > 0 ? result : 1200;
+    }
+
+    /// <summary>
+    /// Whether to print real per-request token usage and the calibration
+    /// factor after each model call (VERBOSE_CTX=1).
+    /// </summary>
+    public static bool GetVerboseCtx()
+    {
+        return Environment.GetEnvironmentVariable("VERBOSE_CTX") == "1";
+    }
+
     public static string GetVerifyCommand()
     {
         return Environment.GetEnvironmentVariable("VERIFY_COMMAND") ?? "dotnet build --nologo -v q";

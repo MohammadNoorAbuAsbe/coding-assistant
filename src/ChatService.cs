@@ -8,13 +8,13 @@ namespace TerminalAiAssistant;
 
 public static class ChatService
 {
-    public static ChatClient CreateClient()
+    public static ChatClient CreateClient(double timeoutSeconds = 300)
     {
         var apiKey = Configuration.GetApiKey();
         var baseUrl = Configuration.GetBaseUrl();
         var model = Configuration.GetModel();
 
-        var options = new OpenAIClientOptions { Endpoint = new Uri(baseUrl), NetworkTimeout = TimeSpan.FromSeconds(300) };
+        var options = new OpenAIClientOptions { Endpoint = new Uri(baseUrl), NetworkTimeout = TimeSpan.FromSeconds(timeoutSeconds) };
 
         var siteUrl = Configuration.GetSiteUrl();
         var siteName = Configuration.GetSiteName();

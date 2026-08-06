@@ -40,10 +40,31 @@ internal static class FileReadHandler
         }
 
         string[] lines = System.IO.File.ReadAllLines(safePath);
-        FileStateJournal.RecordRead(safePath, string.Join("\n", lines));
 
         var (startLine, endLine, note) = ComputeReadRange(args, lines);
+
+        // Read dedup: if this exact range was already returned this session and
+        // the file has not changed on disk, the content is still in the
+        // conversation. Return a short pointer instead of re-injecting tokens.
+        if (FileStateJournal.TryGetReadCoverage(safePath, out int knownStart, out int knownEnd)
+            && !FileStateJournal.IsStale(safePath, string.Join("\n", lines))
+            && startLine >= knownStart && endLine <= knownEnd)
+        {
+            string coverage = knownStart == knownEnd
+                ? $"line {knownStart}"
+                : $"lines {knownStart}-{knownEnd}";
+            return new ToolChatMessage(toolCall.Id,
+                $"[Read skipped: '{args.file_path}' was already read this session ({coverage}) and is unchanged on disk. The requested range (lines {startLine}-{endLine}) is already in the conversation — content as previously returned. Re-read only if you need lines outside {knownStart}-{knownEnd}.]");
+        }
+
         string fileText = FormatReadLines(lines, startLine, endLine, note);
+        if (FileStateJournal.HasState(safePath) && FileStateJournal.IsStale(safePath, string.Join("\n", lines)))
+        {
+            note = "[File changed on disk since last read — content below is current.]\n" + note;
+            fileText = note + FormatReadLines(lines, startLine, endLine, "");
+        }
+
+        FileStateJournal.RecordRead(safePath, string.Join("\n", lines), startLine, endLine);
         return new ToolChatMessage(toolCall.Id, TruncateToTokenLimit(fileText, lines, startLine, endLine));
     }
 

@@ -65,6 +65,13 @@ EXCEPTION: If the user explicitly asked for a preview, plan, or explanation only
 
 If you are uncertain about an approach, need a decision, or the task is ambiguous — use the **Question** tool. Present 2-6 clear options with short labels and descriptions. Do not guess when you can ask. Avoid asking unnecessary questions; use Grep and Read to discover information first.";
 
+    private const string SessionContextSection = @"
+## Session Context
+
+- Read results stay in the conversation for the rest of the session. Do NOT re-read an unchanged file or line range you already have — Read returns a short notice when you request lines that are already in context.
+- Re-read only when: the file changed on disk (a Read result says so), you need lines you never saw, or a context-compaction notice says earlier Read results were dropped.
+- A message starting with ""[Session context (older messages trimmed)]"" means old turns were compressed to save space. If it lists dropped Read results, re-Read only the files you actually need.";
+
     private const string LocalPrompt = @"
 You are a coding assistant with full access to the current workspace directory. You have tools to read, write, search, and execute commands. Use them proactively — do not just describe what you would do, actually do it.
 
@@ -78,6 +85,7 @@ You are in an agent loop. Each iteration you can call one or more tools. You wil
 " + ApplyEditsSection + @"
 " + EditToolChoiceSection + @"
 " + ApplyPatchUsageSection + @"
+" + SessionContextSection + @"
 ## How to Behave
 
 - When asked about the project, use Grep and Read to explore before answering. Do not guess.
@@ -107,6 +115,7 @@ You are a coding assistant with full access to the current workspace directory. 
 " + ApplyEditsSection + @"
 " + EditToolChoiceSection + @"
 " + ApplyPatchUsageSection + @"
+" + SessionContextSection + @"
 ## Rules
 
 - Prefer Edit for single changes; use ApplyPatch for changes spanning multiple hunks.

@@ -47,6 +47,16 @@ public sealed class TempWorkspace : IDisposable
         return fullPath;
     }
 
+    /// <summary>Writes a file to disk without recording it in FileStateJournal.</summary>
+    public string WriteFileNoJournal(string relativePath, string content)
+    {
+        string fullPath = Path.Combine(Root, relativePath);
+        string? dir = Path.GetDirectoryName(fullPath);
+        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+        File.WriteAllText(fullPath, content);
+        return fullPath;
+    }
+
     public string ReadFile(string relativePath) => File.ReadAllText(Path.Combine(Root, relativePath));
 
     public void Dispose()

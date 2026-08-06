@@ -15,11 +15,11 @@ public static class FileStateJournal
     private static readonly Dictionary<string, JournalEntry> Entries = new(StringComparer.OrdinalIgnoreCase);
     private static readonly object Gate = new();
 
-    public static void RecordRead(string fullPath, string content)
+    public static void RecordRead(string fullPath, string content, int startLine, int endLine)
     {
         lock (Gate)
         {
-            Entries[fullPath] = new JournalEntry(ComputeHash(content), writtenBySession: false);
+            Entries[fullPath] = new JournalEntry(ComputeHash(content), writtenBySession: false, startLine, endLine);
         }
     }
 
@@ -27,7 +27,7 @@ public static class FileStateJournal
     {
         lock (Gate)
         {
-            Entries[fullPath] = new JournalEntry(ComputeHash(content), writtenBySession: true);
+            Entries[fullPath] = new JournalEntry(ComputeHash(content), writtenBySession: true, 0, 0);
         }
     }
 
@@ -55,6 +55,29 @@ public static class FileStateJournal
         }
     }
 
+    /// <summary>
+    /// The line range (1-based, inclusive) that the session last returned for
+    /// this file via the Read tool, or false when the file was never read (or
+    /// was only written, never read back).
+    /// </summary>
+    public static bool TryGetReadCoverage(string fullPath, out int startLine, out int endLine)
+    {
+        lock (Gate)
+        {
+            if (Entries.TryGetValue(fullPath, out var entry)
+                && !entry.WrittenBySession
+                && entry.LastReadStart > 0)
+            {
+                startLine = entry.LastReadStart;
+                endLine = entry.LastReadEnd;
+                return true;
+            }
+        }
+        startLine = 0;
+        endLine = 0;
+        return false;
+    }
+
     public static void Clear()
     {
         lock (Gate)
@@ -72,12 +95,16 @@ public static class FileStateJournal
 
 internal sealed class JournalEntry
 {
-    public JournalEntry(string hash, bool writtenBySession)
+    public JournalEntry(string hash, bool writtenBySession, int lastReadStart, int lastReadEnd)
     {
         Hash = hash;
         WrittenBySession = writtenBySession;
+        LastReadStart = lastReadStart;
+        LastReadEnd = lastReadEnd;
     }
 
     public string Hash { get; }
     public bool WrittenBySession { get; }
+    public int LastReadStart { get; }
+    public int LastReadEnd { get; }
 }

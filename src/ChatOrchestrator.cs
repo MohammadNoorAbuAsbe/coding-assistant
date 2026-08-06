@@ -13,6 +13,7 @@ public static class ChatOrchestrator
         var provider = Configuration.GetProvider();
         var maxIterations = Configuration.GetMaxIterations();
         var contextWindowSize = Configuration.GetContextWindowSize();
+        ContextUsageTracker.EnsureModel(Configuration.GetModel());
 
         if (!session.SessionStarted)
         {
@@ -28,12 +29,15 @@ public static class ChatOrchestrator
 
         session.Messages.Add(new UserChatMessage(prompt));
         await RunAgentLoop(client, session.Messages, options, maxIterations, contextWindowSize, cancellationToken);
-        session.Messages = ContextManager.TruncateMessages(session.Messages, GetMessageBudget(contextWindowSize));
+        session.Messages = await ContextManager.TruncateMessagesAsync(session.Messages, GetMessageBudget(contextWindowSize), cancellationToken);
     }
 
     private static int GetMessageBudget(int contextWindowSize)
     {
-        return (int)(contextWindowSize * Configuration.GetContextUsageFraction());
+        int raw = (int)(contextWindowSize * Configuration.GetContextUsageFraction());
+        int adjusted = ContextUsageTracker.GetAdjustedBudget(raw);
+        int cap = (int)(contextWindowSize * 0.95);
+        return Math.Min(adjusted, cap);
     }
 
     internal static async Task<string> RunSubAgent(ChatClient client, List<ChatMessage> messages, int? maxIterations, int contextWindowSize, CancellationToken cancellationToken = default)
@@ -129,6 +133,7 @@ public static class ChatOrchestrator
         var lineBuffer = new StringBuilder();
         bool inCodeBlock = false;
         bool reasoningOnLine = false;
+        ChatTokenUsage? usage = null;
 
         try
         {
@@ -137,6 +142,10 @@ public static class ChatOrchestrator
                 DrainReasoning(ref reasoningOnLine);
                 ProcessContentUpdate(update.ContentUpdate, ref responseContent, lineBuffer, ref inCodeBlock, ref reasoningOnLine);
                 ProcessToolCallUpdates(update.ToolCallUpdates, accumulatedToolCalls);
+                if (update.Usage != null)
+                {
+                    usage = update.Usage;
+                }
             }
         }
         catch (ArgumentOutOfRangeException) when (responseContent == null)
@@ -164,6 +173,20 @@ public static class ChatOrchestrator
         }
 
         DrainReasoning(ref reasoningOnLine);
+
+        if (usage != null)
+        {
+            // messages is unmodified during streaming, so it still represents
+            // exactly what was sent in this request.
+            long estimated = messages.Sum(m => (long)ContextManager.EstimateMessageTokens(m));
+            ContextUsageTracker.Record((long)usage.InputTokenCount, estimated);
+            ContextUsageTracker.RecordOutputTokens((long)usage.OutputTokenCount);
+            if (Configuration.GetVerboseCtx())
+            {
+                using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
+                    await Console.Error.WriteLineAsync($"  ctx: {usage.InputTokenCount:N0} in · {usage.OutputTokenCount:N0} out · est×{ContextUsageTracker.GetCorrectionFactor():0.00}");
+            }
+        }
 
         if (responseContent == null && accumulatedToolCalls.Count == 0)
         {
@@ -420,7 +443,7 @@ public static class ChatOrchestrator
             }
         }
 
-        return ContextManager.TruncateMessages(messages, GetMessageBudget(contextWindowSize));
+        return await ContextManager.TruncateMessagesAsync(messages, GetMessageBudget(contextWindowSize), cancellationToken);
     }
 
     private static void LogBuildVerification(ChatMessage message)

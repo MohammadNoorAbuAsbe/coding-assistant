@@ -9,6 +9,9 @@ public class ContextManagerTests
     public ContextManagerTests()
     {
         Configuration.LoadProviderConfigs();
+        // OpenAI model so EstimateTokens uses exact tiktoken counting.
+        Configuration.SetProvider("openai");
+        Configuration.SetModel("gpt-4o");
     }
 
     [Fact]
