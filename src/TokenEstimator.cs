@@ -73,15 +73,18 @@ public static class TokenEstimator
     {
         if (string.IsNullOrEmpty(text)) return 0;
 
-        int cjk = 0;
-        foreach (char c in text)
+        // Count CJK characters once
+        int cjkLength = 0;
+        for (int i = 0; i < text.Length; i++)
         {
-            if (IsCjk(c)) cjk++;
+            char c = text[i];
+            if (IsCjk(c)) cjkLength++;
         }
 
-        int other = text.Length - cjk;
-        int otherTokens = (other + 3) / 4;
-        return cjk + otherTokens;
+        // Calculate tokens for non-CJK characters in bulk
+        int otherLength = text.Length - cjkLength;
+        int otherTokens = (otherLength + 3) / 4;  // Equivalent to ceil(otherLength / 4.0)
+        return cjkLength + otherTokens;
     }
 
     private static bool IsCjk(char c)

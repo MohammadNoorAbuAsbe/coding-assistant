@@ -16,13 +16,10 @@ Configuration.LoadEnvFile();
 Configuration.LoadProviderConfigs();
 
 var providers = Configuration.Providers;
-
 var providerId = AppBootstrapper.ResolveProviderId(providers);
 Configuration.SetProvider(providerId);
-
 var model = AppBootstrapper.ResolveModel(providerId, providers[providerId]);
 Configuration.SetModel(model);
-
 await Configuration.RefreshContextWindowSizeAsync();
 
 var session = new ChatSession();
@@ -40,8 +37,7 @@ if (Configuration.IsAutopilotEnabled() || args.Contains("--autopilot"))
 while (true)
 {
     var prompt = MenuHandler.GetPrompt();
-    if (string.IsNullOrWhiteSpace(prompt))
-        continue;
+    if (string.IsNullOrWhiteSpace(prompt)) continue;
 
     if (prompt.Equals("/exit", StringComparison.OrdinalIgnoreCase) ||
         prompt.Equals("/quit", StringComparison.OrdinalIgnoreCase))

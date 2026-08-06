@@ -298,18 +298,19 @@ internal static class MatchFinder
     private static List<int> FindLineSequence(string[] content, string[] pattern)
     {
         var matches = new List<int>();
+        if (pattern.Length == 0) return matches;
+
+        var patternFirst = pattern[0];
+        var patternRest = pattern.AsSpan(1);
+
         for (int i = 0; i <= content.Length - pattern.Length; i++)
         {
-            bool match = true;
-            for (int j = 0; j < pattern.Length; j++)
+            if (content[i] != patternFirst) continue;
+
+            if (patternRest.IsEmpty || patternRest.SequenceEqual(content.AsSpan(i + 1, patternRest.Length)))
             {
-                if (content[i + j] != pattern[j])
-                {
-                    match = false;
-                    break;
-                }
+                matches.Add(i);
             }
-            if (match) matches.Add(i);
         }
         return matches;
     }

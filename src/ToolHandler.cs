@@ -84,7 +84,7 @@ public static class ToolHandler
     public static ChatTool CreateGrepTool() =>
         CreateTool(GrepFunctionName, GrepFunctionDescription, [PatternParameter],
             StringProperties(
-                (PatternParameter, "Regex pattern to search for (e.g., 'TODO', 'function\\s+\\w+', '\\.cs$')"),
+                (PatternParameter, "Regex pattern to search for (e.g., 'function\\s+\\w+', '\\.cs$')"),
                 ("path", "Directory or file path to search (defaults to current directory)"),
                 ("include", "File glob pattern to include (e.g., '*.cs', '*.py', '*.js')"),
                 ("exclude", "Glob pattern to exclude (e.g., 'node_modules/**', '*.min.js')"),
