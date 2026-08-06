@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using OpenAI.Chat;
 
@@ -23,10 +24,32 @@ internal static class QuestionHandler
                     return ResponseHandler.CreateErrorResult(toolCall, "Error: Question tool requires at least one option.");
                 }
 
+                if (Autopilot.IsActive)
+                {
+                    return new ToolChatMessage(toolCall.Id, BuildAutoAnswer(args.question, args.options));
+                }
+
                 string answer = AskUser(args.question, args.header, args.options, args.allow_custom == "true");
 
                 return new ToolChatMessage(toolCall.Id, answer);
             });
+    }
+
+    internal static string BuildAutoAnswer(string question, List<ToolHandler.QuestionOption> options)
+    {
+        var sb = new StringBuilder();
+        sb.Append("User is unavailable (autonomous mode). Decide for yourself and continue working — choose what you believe is best, and proceed. The question was: ");
+        sb.Append(question);
+        sb.Append("\nOptions:");
+        for (int i = 0; i < options.Count; i++)
+        {
+            sb.Append($"\n{i + 1}. {options[i].label}");
+            if (!string.IsNullOrEmpty(options[i].description))
+            {
+                sb.Append($" — {options[i].description}");
+            }
+        }
+        return sb.ToString();
     }
 
     private static string AskUser(string question, string? header, List<ToolHandler.QuestionOption> options, bool allowCustom)

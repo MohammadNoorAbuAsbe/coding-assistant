@@ -126,14 +126,28 @@ You are a coding assistant with full access to the current workspace directory. 
 - Respond with a summary after completing tasks.
 - Stop calling tools once the task is done.";
 
+    private const string AutopilotMissionSection = @"
+## AUTONOMOUS MODE
+
+You are running in autonomous mode. Read and obey the mission instructions you receive as user messages: continuously improve this project, one improvement at a time, without ever stopping and without ever asking the user.
+
+- The Question tool still exists but you will never receive a real answer from it — decide for yourself instead of calling it.
+- Never run build or test commands; the running process locks the build output, so they fail with file-lock errors. Verify correctness by reading carefully.
+- Changes to this codebase take effect only after the process restarts; that is expected and fine.
+- Never stop on your own. When an improvement is done, pick the next one and keep going.";
+
     public static string GetPrompt(string provider)
     {
         var customPrompt = Environment.GetEnvironmentVariable("SYSTEM_PROMPT");
-        if (!string.IsNullOrEmpty(customPrompt))
+        string basePrompt = !string.IsNullOrEmpty(customPrompt)
+            ? customPrompt
+            : provider == "ollama" ? LocalPrompt : CloudPrompt;
+
+        if (Autopilot.IsActive)
         {
-            return customPrompt;
+            return basePrompt + AutopilotMissionSection;
         }
 
-        return provider == "ollama" ? LocalPrompt : CloudPrompt;
+        return basePrompt;
     }
 }

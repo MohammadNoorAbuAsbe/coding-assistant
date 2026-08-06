@@ -268,12 +268,29 @@ public static class Configuration
 
     public static bool GetAutoVerify()
     {
+        // Autopilot mode edits the codebase it runs from; the running process
+        // locks the build output, so a post-edit build would fail with file-lock
+        // errors regardless of correctness. Verification is always off there.
+        if (Autopilot.IsActive)
+            return false;
+
         var value = Environment.GetEnvironmentVariable("AUTO_VERIFY");
         if (bool.TryParse(value, out var result)) return result;
         // On by default: a post-edit build surfaces compile errors immediately,
         // which is the strongest guard against hallucinated refactors. Disable
         // with AUTO_VERIFY=false on very slow hardware.
         return true;
+    }
+
+    /// <summary>
+    /// Whether to start the assistant directly in autonomous (autopilot) mode.
+    /// Set AUTOPILOT=1 to skip the interactive prompt loop and have the agent
+    /// continuously improve the project until the user stops it with Ctrl+C.
+    /// </summary>
+    public static bool IsAutopilotEnabled()
+    {
+        var value = Environment.GetEnvironmentVariable("AUTOPILOT");
+        return value == "1" || value?.Equals("true", StringComparison.OrdinalIgnoreCase) == true;
     }
 
     /// <summary>

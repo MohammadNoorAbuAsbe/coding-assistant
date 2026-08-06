@@ -30,6 +30,13 @@ var session = new ChatSession();
 var cancelController = new AppBootstrapper.CancelController();
 cancelController.RegisterCancelHandler();
 
+if (Configuration.IsAutopilotEnabled())
+{
+    cancelController.Arm();
+    await Autopilot.Run(session, cancelController);
+    return;
+}
+
 while (true)
 {
     var prompt = MenuHandler.GetPrompt();
@@ -39,6 +46,17 @@ while (true)
     if (prompt.Equals("/exit", StringComparison.OrdinalIgnoreCase) ||
         prompt.Equals("/quit", StringComparison.OrdinalIgnoreCase))
         break;
+
+    if (prompt.Equals("/autopilot", StringComparison.OrdinalIgnoreCase))
+    {
+        session.Reset();
+        UndoJournal.Clear();
+        FileStateJournal.Clear();
+        ContextUsageTracker.Reset();
+        cancelController.Arm();
+        await Autopilot.Run(session, cancelController);
+        continue;
+    }
 
     if (prompt.Equals("/new", StringComparison.OrdinalIgnoreCase) ||
         prompt.Equals("/reset", StringComparison.OrdinalIgnoreCase))
