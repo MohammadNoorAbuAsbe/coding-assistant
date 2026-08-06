@@ -86,8 +86,6 @@ public static class ChatOrchestrator
         int skippedEditNudges = 0;
         var stallTracker = new StallTracker();
         int stallInterventions = 0;
-        int journalCount = UndoJournal.List().Count;
-        int turnsSinceFileChange = 0;
 
         for (int iteration = 0; maxIterations == null || iteration < maxIterations; iteration++)
         {
@@ -126,24 +124,6 @@ public static class ChatOrchestrator
 
             await Console.Error.WriteLineAsync();
             messages = await FinalizeToolCallsAsync(accumulatedToolCalls, messages, contextWindowSize, cancellationToken);
-
-            int newJournalCount = UndoJournal.List().Count;
-            if (newJournalCount != journalCount)
-            {
-                journalCount = newJournalCount;
-                turnsSinceFileChange = 0;
-            }
-            else if (turnsSinceFileChange >= MaxExplorationTurns)
-            {
-                turnsSinceFileChange = 0;
-                using (ConsoleStyler.WithColor(ConsoleColor.Yellow))
-                    await Console.Error.WriteLineAsync("\n[No progress] The model has explored for many turns without changing any file — urging it to implement something.");
-                messages.Add(new UserChatMessage("You have spent many tool calls exploring (reading/searching) without making any file changes. STOP exploring. Pick ONE concrete improvement right now and implement it with a single Edit, ApplyPatch, or Write call. Then end your turn with a short summary of what you changed."));
-            }
-            else
-            {
-                turnsSinceFileChange++;
-            }
 
             if (stallTracker.Observe(StallDetector.Fingerprint(messages)))
             {
@@ -642,8 +622,6 @@ public static class ChatOrchestrator
     private const int MaxSkippedEditNudges = 2;
 
     private const int MaxStallInterventions = 3;
-
-    private const int MaxExplorationTurns = 8;
 
     // Only nudge when the model's previous turn was text-only. If it already
     // executed tool calls, a fenced before/after block in the summary is a
