@@ -49,7 +49,15 @@ A terminal-based AI coding assistant that uses LLMs to read, write, edit, search
 
 ### Provider-specific notes
 
-- **Ollama**: Install [Ollama](https://ollama.com) and pull a model (`ollama pull qwen3:8b`). No API key needed. Models are auto-discovered via `ollama list`.
+- **Ollama**: Install [Ollama](https://ollama.com) and pull a model (`ollama pull qwen3:8b`, `ollama pull llama3`, `ollama pull mistral`, or `ollama pull phi3`). No API key needed. Models are auto-discovered via `ollama list`. Use `AI_PROVIDER=ollama` and `AI_MODEL=qwen3:8b` (or other model names) to switch.
+
+  > **Setup**: Ensure Ollama is running and the model is pulled. The assistant will auto-detect available models via `ollama list`.
+
+  > **Usage**: Set `AI_PROVIDER=ollama` and `AI_MODEL=llama3` (or other model names) to use these models.
+
+  > **Configurable Models**: Edit `config.json` to add/remove models under the `ollama` provider. Example: `"models": ["qwen3:8b", "llama3", "mistral", "phi3"]`.
+
+  > **Non-interactive mode**: Use environment variables like `AI_PROVIDER=ollama` and `AI_MODEL=phi3` to specify the model without prompts.
 - **OpenRouter**: Get an API key from [OpenRouter](https://openrouter.ai) and set `OPENROUTER_API_KEY`.
 - **OpenAI**: Get an API key from the [Azure Portal](https://portal.azure.com) or [OpenAI](https://platform.openai.com) and set `OPENAI_API_KEY`.
 - **Google Gemini**: Get a free API key from [Google AI Studio](https://aistudio.google.com/apikey) and set `GEMINI_API_KEY`. No credit card required — the free tier covers Flash models (e.g., `gemini-3.6-flash`, `gemini-2.5-flash`). Uses the OpenAI-compatible endpoint, so all tools work.

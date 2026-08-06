@@ -3,11 +3,16 @@ using OpenAI.Chat;
 using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Runtime.CompilerServices;
+using System.Threading;
 
 namespace TerminalAiAssistant;
 
 public static class ChatService
 {
+    private static readonly TimeSpan MinRequestInterval = TimeSpan.FromSeconds(10);
+    private static DateTime _lastRequestTime = DateTime.MinValue;
+    private static readonly object _rateLimitLock = new();
+
     public static ChatClient CreateClient(double timeoutSeconds = 300)
     {
         var apiKey = Configuration.GetApiKey();
@@ -24,6 +29,13 @@ public static class ChatService
         }
 
         options.AddPolicy(new ReasoningTapPolicy(), PipelinePosition.PerCall);
+
+        // Add rate limiting policy for all cloud providers (skip Ollama/local)
+        var provider = Configuration.GetProvider();
+        if (provider != "ollama")
+        {
+            options.AddPolicy(new RateLimitPolicy(MinRequestInterval), PipelinePosition.PerCall);
+        }
 
         return new ChatClient(
             model: model,
@@ -42,6 +54,45 @@ public static class ChatService
         await foreach (var update in client.CompleteChatStreamingAsync(chatMessages, options, cancellationToken))
         {
             yield return update;
+        }
+    }
+}
+
+internal sealed class RateLimitPolicy : PipelinePolicy
+{
+    private readonly TimeSpan _minInterval;
+    private DateTime _lastRequest = DateTime.MinValue;
+    private readonly object _lock = new();
+
+    public RateLimitPolicy(TimeSpan minInterval)
+    {
+        _minInterval = minInterval;
+    }
+
+    public override void Process(PipelineMessage message, IReadOnlyList<PipelinePolicy> pipeline, int currentIndex)
+    {
+        Throttle();
+        ProcessNext(message, pipeline, currentIndex);
+    }
+
+    public override async ValueTask ProcessAsync(PipelineMessage message, IReadOnlyList<PipelinePolicy> pipeline, int currentIndex)
+    {
+        Throttle();
+        await ProcessNextAsync(message, pipeline, currentIndex);
+    }
+
+    private void Throttle()
+    {
+        lock (_lock)
+        {
+            var now = DateTime.UtcNow;
+            var elapsed = now - _lastRequest;
+            if (elapsed < _minInterval)
+            {
+                var delay = _minInterval - elapsed;
+                Thread.Sleep(delay);
+            }
+            _lastRequest = DateTime.UtcNow;
         }
     }
 }

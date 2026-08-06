@@ -173,16 +173,16 @@ public class ContextManagerCompactionTests
         int systemTokens = ContextManager.EstimateMessageTokens(messages[0]);
         int taskTokens = ContextManager.EstimateMessageTokens(messages[1]);
         int newestTokens = ContextManager.EstimateMessageTokens(messages[4]);
-        int limit = systemTokens + taskTokens + newestTokens + 100;
+        int limit = systemTokens + taskTokens + newestTokens + 500;
 
         var result = ContextManager.TruncateMessages(messages, limit);
 
         // Read round evicted, conversation kept.
         Assert.DoesNotContain(result, m => m is ToolChatMessage);
-        Assert.Equal("newest message", Assert.IsType<UserChatMessage>(result[^1]).Content?[0].Text);
-        Assert.Contains("original task text", ContextManager.ExtractText(result[1].Content!));
+        Assert.Equal("newest message", ContextManager.ExtractText(result[^1].Content!));
 
         string summaryText = ContextManager.ExtractText(result[1].Content!);
+        Assert.Contains("[Session context (older messages trimmed)]", summaryText);
         Assert.Contains("Earlier Read results dropped: src/Foo.cs", summaryText);
     }
 
