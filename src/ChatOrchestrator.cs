@@ -86,6 +86,8 @@ public static class ChatOrchestrator
         int skippedEditNudges = 0;
         var stallTracker = new StallTracker();
         int stallInterventions = 0;
+        int journalCount = UndoJournal.List().Count;
+        int turnsSinceFileChange = 0;
 
         for (int iteration = 0; maxIterations == null || iteration < maxIterations; iteration++)
         {
@@ -124,6 +126,27 @@ public static class ChatOrchestrator
 
             await Console.Error.WriteLineAsync();
             messages = await FinalizeToolCallsAsync(accumulatedToolCalls, messages, contextWindowSize, cancellationToken);
+
+            if (Autopilot.IsActive)
+            {
+                int newJournalCount = UndoJournal.List().Count;
+                if (newJournalCount != journalCount)
+                {
+                    journalCount = newJournalCount;
+                    turnsSinceFileChange = 0;
+                }
+                else if (turnsSinceFileChange >= MaxDecisionTurns)
+                {
+                    turnsSinceFileChange = 0;
+                    using (ConsoleStyler.WithColor(ConsoleColor.Yellow))
+                        await Console.Error.WriteLineAsync("\n[Autopilot directive] No file changes for many turns — supplying concrete tasks.");
+                    messages.Add(new UserChatMessage(AutopilotSuggestions.BuildDirective()));
+                }
+                else
+                {
+                    turnsSinceFileChange++;
+                }
+            }
 
             if (stallTracker.Observe(StallDetector.Fingerprint(messages)))
             {
@@ -622,6 +645,8 @@ public static class ChatOrchestrator
     private const int MaxSkippedEditNudges = 2;
 
     private const int MaxStallInterventions = 3;
+
+    private const int MaxDecisionTurns = 12;
 
     // Only nudge when the model's previous turn was text-only. If it already
     // executed tool calls, a fenced before/after block in the summary is a

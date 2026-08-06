@@ -140,6 +140,26 @@ public class AutopilotTests
     }
 
     [Fact]
+    public void BuildDirective_CommandsASingleWriteCall()
+    {
+        string directive = AutopilotSuggestions.BuildDirective();
+
+        Assert.Contains("AUTOPILOT DIRECTIVE", directive);
+        Assert.Contains("MUST be a single Edit, ApplyPatch, or Write tool call", directive);
+        Assert.Contains("Do NOT call Read, Grep, Glob", directive);
+        Assert.Contains("  - ", directive);
+    }
+
+    [Fact]
+    public void BuildNoChangeCarryover_DemandsAChange()
+    {
+        string message = AutopilotSuggestions.BuildNoChangeCarryover();
+
+        Assert.Contains("LAST CYCLE RESULT", message);
+        Assert.Contains("MUST make at least one file change", message);
+    }
+
+    [Fact]
     public void GetPrompt_NoMissionSectionWhenNotInAutopilot()
     {
         string? originalSystemPrompt = Environment.GetEnvironmentVariable("SYSTEM_PROMPT");
