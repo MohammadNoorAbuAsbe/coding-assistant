@@ -30,7 +30,7 @@ var session = new ChatSession();
 var cancelController = new AppBootstrapper.CancelController();
 cancelController.RegisterCancelHandler();
 
-if (Configuration.IsAutopilotEnabled())
+if (Configuration.IsAutopilotEnabled() || args.Contains("--autopilot"))
 {
     cancelController.Arm();
     await Autopilot.Run(session, cancelController);

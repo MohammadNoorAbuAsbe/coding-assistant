@@ -240,6 +240,14 @@ set AUTOPILOT=1
 dotnet run
 ```
 
+Or with a flag (works in any shell):
+
+```sh
+dotnet run -- --autopilot
+```
+
+On PowerShell, use `$env:AUTOPILOT = "1"` instead of `set AUTOPILOT=1` (PowerShell's `set` does not set environment variables).
+
 Or type `/autopilot` in the interactive session. How it works:
 
 - Each cycle runs the normal agent loop with a mission prompt ("pick the next highest-value improvement and implement it, never stop, never ask").
