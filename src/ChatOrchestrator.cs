@@ -84,6 +84,8 @@ public static class ChatOrchestrator
         CancellationToken cancellationToken)
     {
         int skippedEditNudges = 0;
+        string? lastToolCallFingerprint = null;
+        int consecutiveToolCallCount = 0;
 
         for (int iteration = 0; maxIterations == null || iteration < maxIterations; iteration++)
         {
@@ -122,6 +124,16 @@ public static class ChatOrchestrator
 
             await Console.Error.WriteLineAsync();
             messages = await FinalizeToolCallsAsync(accumulatedToolCalls, messages, contextWindowSize, cancellationToken);
+
+            if (StallDetector.ShouldInterruptStall(
+                    StallDetector.Fingerprint(messages),
+                    ref lastToolCallFingerprint,
+                    ref consecutiveToolCallCount))
+            {
+                using (ConsoleStyler.WithColor(ConsoleColor.Yellow))
+                    await Console.Error.WriteLineAsync("\n[Loop detected] Stopping the repeated tool call; urging the model to take a different action.");
+                messages.Add(new UserChatMessage("You are repeating the same tool call. Stop this loop immediately: Read the relevant file fresh (a wide range), fix the problem correctly with a single Edit or ApplyPatch, or abandon it and move on to a different task. Do NOT issue this exact tool call again."));
+            }
         }
     }
 
@@ -380,7 +392,7 @@ public static class ChatOrchestrator
             Console.Error.Write($"] ");
     }
 
-    private static string? ExtractFirstStringValue(string json)
+    internal static string? ExtractFirstStringValue(string json)
     {
         var match = System.Text.RegularExpressions.Regex.Match(json, @"""[^""\\]+"":\s*""((?:[^""\\]|\\.)*)""");
         return match.Success ? match.Groups[1].Value : null;
@@ -654,4 +666,68 @@ public class ToolCallAccumulator
     public BinaryData? ExtraContent { get; set; }
     public bool ArgDisplayed { get; set; }
     public bool ArgsLogged { get; set; }
+}
+
+/// <summary>
+/// Detects degenerate loops where the model issues the same tool call
+/// (same function + same primary argument) over and over — e.g. re-reading
+/// the same file or re-attempting the same failed edit in a tight cycle.
+/// After a configurable number of consecutive identical calls, an
+/// intervention message is injected to force the model to take a different
+/// action. Applies to both normal and autopilot mode.
+/// </summary>
+internal static class StallDetector
+{
+    internal const int ConsecutiveRepeatLimit = 3;
+
+    /// <summary>
+    /// Fingerprint of the most recent assistant tool call: function name plus
+    /// the first string argument value. Returns null when the last assistant
+    /// message has no tool calls.
+    /// </summary>
+    internal static string? Fingerprint(List<ChatMessage> messages)
+    {
+        for (int i = messages.Count - 1; i >= 0; i--)
+        {
+            if (messages[i] is AssistantChatMessage assistant &&
+                assistant.ToolCalls != null &&
+                assistant.ToolCalls.Count > 0)
+            {
+                var call = assistant.ToolCalls[0];
+                string args = call.FunctionArguments?.ToString() ?? "";
+                string? primary = ChatOrchestrator.ExtractFirstStringValue(args);
+                return $"{call.FunctionName}|{primary}";
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Feeds the current fingerprint into the stall tracker. Returns true
+    /// when the same fingerprint has been seen ConsecutiveRepeatLimit times
+    /// in a row, and resets the tracker so the intervention fires at most
+    /// once per stall.
+    /// </summary>
+    internal static bool ShouldInterruptStall(string? fingerprint, ref string? lastFingerprint, ref int consecutiveCount)
+    {
+        if (fingerprint != null && fingerprint == lastFingerprint)
+        {
+            consecutiveCount++;
+        }
+        else
+        {
+            consecutiveCount = 1;
+        }
+
+        lastFingerprint = fingerprint;
+
+        if (consecutiveCount >= ConsecutiveRepeatLimit)
+        {
+            consecutiveCount = 0;
+            lastFingerprint = null;
+            return true;
+        }
+
+        return false;
+    }
 }
