@@ -12,6 +12,8 @@ if (OperatingSystem.IsWindows() && !FolderPicker.ShouldSkip())
     }
 }
 
+UiStyler.ShowBanner();
+
 Configuration.LoadEnvFile();
 Configuration.LoadProviderConfigs();
 
@@ -21,6 +23,12 @@ Configuration.SetProvider(providerId);
 var model = AppBootstrapper.ResolveModel(providerId, providers[providerId]);
 Configuration.SetModel(model);
 await Configuration.RefreshContextWindowSizeAsync();
+
+var ctxSource = Configuration.GetContextWindowSource();
+var contextWindowSize = Configuration.GetContextWindowSize();
+var ctxLabel = ctxSource == null ? $"{contextWindowSize}" : $"{contextWindowSize} ({ctxSource})";
+UiStyler.ShowStatusCard(Configuration.GetProvider(), Configuration.GetModel(), System.Environment.CurrentDirectory, ctxLabel);
+UiStyler.ShowHelp();
 
 var session = new ChatSession();
 
@@ -42,6 +50,12 @@ while (true)
     if (prompt.Equals("/exit", StringComparison.OrdinalIgnoreCase) ||
         prompt.Equals("/quit", StringComparison.OrdinalIgnoreCase))
         break;
+
+    if (prompt.Equals("/help", StringComparison.OrdinalIgnoreCase))
+    {
+        UiStyler.ShowHelp();
+        continue;
+    }
 
     if (prompt.Equals("/autopilot", StringComparison.OrdinalIgnoreCase))
     {
