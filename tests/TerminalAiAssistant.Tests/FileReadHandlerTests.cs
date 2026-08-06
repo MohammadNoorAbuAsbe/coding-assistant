@@ -43,22 +43,19 @@ public class FileReadHandlerTests : IDisposable
         var result = Read("file.txt");
 
         string text = ContextManager.ExtractText(result.Content!);
-        Assert.Contains("[Read skipped: 'file.txt' was already read this session (lines 1-3) and is unchanged on disk.", text);
+        Assert.Contains("[Read skipped: 'file.txt' was already read this session (lines 1-3) and is unchanged on disk", text);
         Assert.DoesNotContain("line one", text);
     }
 
     [Fact]
-    public void ProcessReadFileCall_PartialThenFullRead_ReturnsFullContent()
+    public void ProcessReadFileCall_RangeParameters_Ignored_ReturnsWholeFile()
     {
         _ws.WriteFileNoJournal("file.txt", "line one\nline two\nline three");
-        Read("file.txt", startLine: 1, endLine: 2);
-
-        var result = Read("file.txt");
+        var result = Read("file.txt", startLine: 1, endLine: 2);
 
         string text = ContextManager.ExtractText(result.Content!);
         Assert.Contains("1: line one", text);
         Assert.Contains("3: line three", text);
-        Assert.DoesNotContain("[Read skipped:", text);
     }
 
     [Fact]
@@ -74,7 +71,7 @@ public class FileReadHandlerTests : IDisposable
     }
 
     [Fact]
-    public void ProcessReadFileCall_RangeBeyondCoverage_ReturnsFullContent()
+    public void ProcessReadFileCall_RepeatedRead_ReturnsDedupStubEvenWithRanges()
     {
         _ws.WriteFileNoJournal("file.txt", "line one\nline two\nline three");
         Read("file.txt", startLine: 1, endLine: 2);
@@ -82,9 +79,7 @@ public class FileReadHandlerTests : IDisposable
         var result = Read("file.txt", startLine: 2, endLine: 3);
 
         string text = ContextManager.ExtractText(result.Content!);
-        Assert.DoesNotContain("[Read skipped:", text);
-        Assert.Contains("2: line two", text);
-        Assert.Contains("3: line three", text);
+        Assert.Contains("[Read skipped:", text);
     }
 
     [Fact]

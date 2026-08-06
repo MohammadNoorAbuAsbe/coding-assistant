@@ -47,7 +47,7 @@ public class ResponseHandlerToolTests
     }
 
     [Fact]
-    public async Task Read_LineRange_ReturnsOnlyRequestedLines()
+    public async Task Read_LineRange_Ignored_ReturnsWholeFile()
     {
         using var ws = new TempWorkspace();
         ws.WriteFile("file.txt", string.Join("\n", Enumerable.Range(1, 20).Select(i => $"line {i}")) + "\n");
@@ -57,8 +57,8 @@ public class ResponseHandlerToolTests
         string text = ToolText(message!);
         Assert.Contains("5: line 5", text);
         Assert.Contains("7: line 7", text);
-        Assert.DoesNotContain("4: line 4", text);
-        Assert.DoesNotContain("8: line 8", text);
+        Assert.Contains("4: line 4", text);
+        Assert.Contains("8: line 8", text);
     }
 
     [Fact]
@@ -75,7 +75,7 @@ public class ResponseHandlerToolTests
     }
 
     [Fact]
-    public async Task Read_StartLineOnly_ExpandsToEnclosingMethod()
+    public async Task Read_StartLineOnly_SmallFile_ReturnsWholeFile()
     {
         using var ws = new TempWorkspace();
         ws.WriteFile("file.txt",
@@ -93,14 +93,13 @@ public class ResponseHandlerToolTests
         var message = await RunAsync(ToolHandler.ReadFunctionName, new { file_path = "file.txt", start_line = "5" });
 
         string text = ToolText(message!);
-        Assert.Contains("expanded to enclosing method: lines 3-10", text);
+        Assert.DoesNotContain("expanded to", text);
         Assert.Contains("3:     public void Foo()", text);
-        Assert.Contains("10:     }", text);
-        Assert.DoesNotContain("11: }", text);
+        Assert.Contains("11: }", text);
     }
 
     [Fact]
-    public async Task Read_StartLineOnly_MultiLineSignature_Expands()
+    public async Task Read_StartLineOnly_SmallFileWithMultiLineSignature_ReturnsWholeFile()
     {
         using var ws = new TempWorkspace();
         ws.WriteFile("file.txt",
@@ -114,13 +113,34 @@ public class ResponseHandlerToolTests
         var message = await RunAsync(ToolHandler.ReadFunctionName, new { file_path = "file.txt", start_line = "5" });
 
         string text = ToolText(message!);
-        Assert.Contains("expanded to enclosing method: lines 1-6", text);
+        Assert.DoesNotContain("expanded to", text);
         Assert.Contains("1:     public static async Task<int> Foo(", text);
         Assert.Contains("6:     }", text);
     }
 
     [Fact]
-    public async Task Read_WithEndLine_NoMethodExpansion()
+    public async Task Read_StartLineOnly_LargeFile_ReturnsWholeFile()
+    {
+        using var ws = new TempWorkspace();
+        var lines = new string[300];
+        for (int i = 0; i < 300; i++) lines[i] = $"        line {i + 1};";
+        lines[149] = "    private void Foo()";
+        lines[150] = "    {";
+        for (int i = 151; i < 199; i++) lines[i] = $"        work({i});";
+        lines[199] = "    }";
+        ws.WriteFile("file.txt", string.Join("\n", lines) + "\n");
+
+        var message = await RunAsync(ToolHandler.ReadFunctionName, new { file_path = "file.txt", start_line = "160" });
+
+        string text = ToolText(message!);
+        Assert.DoesNotContain("expanded to", text);
+        Assert.Contains("1:         line 1;", text);
+        Assert.Contains("150:     private void Foo()", text);
+        Assert.Contains("200:     }", text);
+    }
+
+    [Fact]
+    public async Task Read_WithExplicitRange_ReturnsWholeFile()
     {
         using var ws = new TempWorkspace();
         ws.WriteFile("file.txt",
@@ -134,9 +154,10 @@ public class ResponseHandlerToolTests
         var message = await RunAsync(ToolHandler.ReadFunctionName, new { file_path = "file.txt", start_line = "5", end_line = "5" });
 
         string text = ToolText(message!);
-        Assert.DoesNotContain("expanded to enclosing method", text);
+        Assert.DoesNotContain("expanded to", text);
         Assert.Contains("5:         int x = 1;", text);
-        Assert.DoesNotContain("3:     public void Foo()", text);
+        Assert.Contains("3:     public void Foo()", text);
+        Assert.Contains("7: }", text);
     }
 
     [Fact]
@@ -155,7 +176,7 @@ public class ResponseHandlerToolTests
 
         string text = ToolText(message!);
         Assert.Contains("[truncated: showing lines 1-", text);
-        Assert.Contains("Use Read with start_line/end_line", text);
+        Assert.Contains("cannot be returned in full", text);
     }
 
     [Fact]

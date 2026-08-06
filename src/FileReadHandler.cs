@@ -41,10 +41,11 @@ internal static class FileReadHandler
 
         string[] lines = System.IO.File.ReadAllLines(safePath);
 
-        var (startLine, endLine, note) = ComputeReadRange(args, lines);
+        const int startLine = 1;
+        int endLine = lines.Length;
 
-        // Read dedup: if this exact range was already returned this session and
-        // the file has not changed on disk, the content is still in the
+        // Read dedup: if this file was already read this session and the
+        // file has not changed on disk, the content is still in the
         // conversation. Return a short pointer instead of re-injecting tokens.
         if (FileStateJournal.TryGetReadCoverage(safePath, out int knownStart, out int knownEnd)
             && !FileStateJournal.IsStale(safePath, string.Join("\n", lines))
@@ -54,14 +55,13 @@ internal static class FileReadHandler
                 ? $"line {knownStart}"
                 : $"lines {knownStart}-{knownEnd}";
             return new ToolChatMessage(toolCall.Id,
-                $"[Read skipped: '{args.file_path}' was already read this session ({coverage}) and is unchanged on disk. The requested range (lines {startLine}-{endLine}) is already in the conversation — content as previously returned. Re-read only if you need lines outside {knownStart}-{knownEnd}.]");
+                $"[Read skipped: '{args.file_path}' was already read this session ({coverage}) and is unchanged on disk — content as previously returned.]");
         }
 
-        string fileText = FormatReadLines(lines, startLine, endLine, note);
+        string fileText = FormatReadLines(lines, startLine, endLine, "");
         if (FileStateJournal.HasState(safePath) && FileStateJournal.IsStale(safePath, string.Join("\n", lines)))
         {
-            note = "[File changed on disk since last read — content below is current.]\n" + note;
-            fileText = note + FormatReadLines(lines, startLine, endLine, "");
+            fileText = "[File changed on disk since last read — content below is current.]\n" + fileText;
         }
 
         FileStateJournal.RecordRead(safePath, string.Join("\n", lines), startLine, endLine);
@@ -70,27 +70,7 @@ internal static class FileReadHandler
 
     private static (int Start, int End, string Note) ComputeReadRange(ToolHandler.ReadFileCall args, string[] lines)
     {
-        int startLine = ParseLineNumber(args.start_line, 1);
-        int endLine = ParseLineNumber(args.end_line, lines.Length);
-
-        if (startLine < 1) startLine = 1;
-        if (startLine > lines.Length) startLine = lines.Length + 1;
-        if (endLine > lines.Length) endLine = lines.Length;
-        if (endLine < startLine) endLine = startLine;
-
-        string note = "";
-        if (args.end_line == null && args.start_line != null)
-        {
-            var range = FindEnclosingMethodRange(lines, startLine - 1);
-            if (range.HasValue)
-            {
-                startLine = range.Value.Start + 1;
-                endLine = range.Value.End + 1;
-                note = $"[Read expanded to enclosing method: lines {startLine}-{endLine}]\n";
-            }
-        }
-
-        return (startLine, endLine, note);
+        return (1, lines.Length, "");
     }
 
     private static string FormatReadLines(string[] lines, int startLine, int endLine, string note)
@@ -118,7 +98,7 @@ internal static class FileReadHandler
         string shown = fileText[..cut];
         int lastShown = startLine + shown.Count(c => c == '\n');
         if (lastShown > endLine) lastShown = endLine;
-        return shown + $"\n\n... [truncated: showing lines {startLine}-{lastShown} of {lines.Length}. Use Read with start_line/end_line to fetch the remaining lines in ranges.]";
+        return shown + $"\n\n... [truncated: showing lines {startLine}-{lastShown} of {lines.Length}. This file exceeds the tool-result token budget and cannot be returned in full.]";
     }
 
     private static string BuildFileNotFoundMessage(string displayPath, string safePath)
@@ -245,120 +225,5 @@ internal static class FileReadHandler
             if (buffer[i] < 9 || (buffer[i] > 13 && buffer[i] < 32)) nonPrintable++;
         }
         return (double)nonPrintable / read > 0.3;
-    }
-
-    private static int ParseLineNumber(string? value, int fallback)
-    {
-        return int.TryParse(value, out int n) ? n : fallback;
-    }
-
-    private static (int Start, int End)? FindEnclosingMethodRange(string[] lines, int targetLine)
-    {
-        if (lines.Length == 0 || targetLine < 0 || targetLine >= lines.Length) return null;
-
-        int braceLine = FindMethodOpeningBraceLine(lines, targetLine);
-        if (braceLine < 0) return null;
-
-        int signatureStart = FindSignatureStartLine(lines, braceLine);
-        int closeLine = FindClosingBraceLine(lines, braceLine);
-
-        return closeLine < 0 ? null : (signatureStart, closeLine);
-    }
-
-    private static int FindMethodOpeningBraceLine(string[] lines, int targetLine)
-    {
-        for (int i = targetLine; i >= 0; i--)
-        {
-            if (!lines[i].TrimEnd().EndsWith('{')) continue;
-            if (IsMethodOpeningBrace(lines, i))
-            {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    private static int FindSignatureStartLine(string[] lines, int braceLine)
-    {
-        int signatureStart = braceLine;
-        for (int i = braceLine - 1; i >= 0; i--)
-        {
-            string trimmed = lines[i].TrimEnd();
-            if (trimmed.Length == 0) break;
-            char last = trimmed[^1];
-            if (last == '(' || last == ')' || last == ',')
-            {
-                signatureStart = i;
-            }
-            else
-            {
-                break;
-            }
-        }
-        return signatureStart;
-    }
-
-    private static int FindClosingBraceLine(string[] lines, int braceLine)
-    {
-        int depth = 0;
-        bool inString = false;
-        for (int i = braceLine; i < lines.Length; i++)
-        {
-            ScanLineForBraces(lines[i], ref depth, ref inString);
-            if (depth == 0 && i > braceLine)
-            {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    private static void ScanLineForBraces(string line, ref int depth, ref bool inString)
-    {
-        for (int c = 0; c < line.Length; c++)
-        {
-            char ch = line[c];
-            if (inString)
-            {
-                if (ch == '"' && !IsEscaped(line, c)) inString = false;
-                continue;
-            }
-            if (ch == '/' && c + 1 < line.Length && line[c + 1] == '/') return;
-            if (ch == '{') depth++;
-            else if (ch == '}') depth--;
-            else if (ch == '"') inString = true;
-        }
-    }
-
-    private static bool IsMethodOpeningBrace(string[] lines, int braceIndex)
-    {
-        for (int i = braceIndex - 1; i >= 0; i--)
-        {
-            string line = lines[i].Trim();
-            if (line.Length == 0) return false;
-            if (line.EndsWith('{') || line.EndsWith('}') || line.EndsWith(';')) return false;
-            if (line.Contains('('))
-            {
-                return !IsControlKeywordStart(line);
-            }
-        }
-        return false;
-    }
-
-    private static readonly string[] ControlKeywords =
-    {
-        "if ", "for ", "while ", "foreach ", "switch ", "catch ", "using ", "lock ", "else ", "return ", "do "
-    };
-
-    private static bool IsControlKeywordStart(string line)
-    {
-        return ControlKeywords.Any(k => line.StartsWith(k, StringComparison.Ordinal));
-    }
-
-    private static bool IsEscaped(string line, int index)
-    {
-        int backslashes = 0;
-        for (int i = index - 1; i >= 0 && line[i] == '\\'; i--) backslashes++;
-        return backslashes % 2 == 1;
     }
 }

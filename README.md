@@ -141,7 +141,7 @@ The assistant has 13 tools that it can call autonomously:
 
 | Tool | Description |
 |------|-------------|
-| **Read** | Read a file (returns content with line numbers; optional `start_line`/`end_line` to read only a line range — large files are auto-truncated and the model is told to fetch remaining lines in ranges) |
+| **Read** | Read a file (always returns the whole file with line numbers; `start_line`/`end_line` are ignored — enormous files are truncated to the token budget) |
 | **Write** | Write content to a file (auto-creates directories) |
 | **Edit** | Edit a file by string replacement (fuzzy tolerance for whitespace/case differences) |
 | **ApplyPatch** | Apply a unified diff (patch) to a file — multiple hunks in one call, matched with fuzzy whitespace tolerance; can create new files from all-additions patches |
