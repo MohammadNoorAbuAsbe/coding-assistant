@@ -1,6 +1,17 @@
 using OpenAI.Chat;
 using TerminalAiAssistant;
 
+if (OperatingSystem.IsWindows() && !FolderPicker.ShouldSkip())
+{
+    var picked = FolderPicker.PickFolder(System.Environment.CurrentDirectory);
+    if (picked != null)
+    {
+        System.Environment.CurrentDirectory = picked;
+        using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
+            await Console.Error.WriteLineAsync($"Working folder: {picked}");
+    }
+}
+
 Configuration.LoadEnvFile();
 Configuration.LoadProviderConfigs();
 
