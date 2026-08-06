@@ -46,10 +46,12 @@ public static class ModelCatalog
         ("mixtral", 32_768),
         ("codestral", 32_768),
         ("deepseek-r1", 65_536),
+        ("deepseek-v3", 131_072),
         ("deepseek", 131_072),
         ("codegemma", 8_192),
         ("gemma", 8_192),
         ("phi-4", 16_384),
+        ("phi-3.5", 128_000),
         ("phi-3", 4_096),
         ("phi", 16_384),
         ("command-r", 128_000),
@@ -58,6 +60,7 @@ public static class ModelCatalog
         ("glm", 131_072),
         ("kimi", 131_072),
         ("grok", 131_072),
+         ("grok-3", 131_072),
         ("granite", 128_000),
     };
 

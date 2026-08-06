@@ -21,7 +21,7 @@ internal static class LlmCompactionSummarizer
         - the original request and its goal;
         - the current task list / todo state;
         - build or verification status and any errors;
-        - which files were read, edited, or created, and what changed;
+        - which files were read, edited, or created, and what changed (be specific about the logic changes, not just 'edited file.cs');
         - any decisions, open problems, or instructions still pending.
 
         Write plain prose. No headings, no markdown, no code fences, no tool-call syntax. Never invent facts. If a previous summary is included, merge it with the new turns — do not repeat or discard earlier context. If there is nothing worth preserving, output nothing.

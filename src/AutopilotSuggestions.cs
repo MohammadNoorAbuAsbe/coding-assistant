@@ -23,7 +23,7 @@ internal static class AutopilotSuggestions
                 "Improve performance: find a hot path — token estimation runs on every tool result, context compaction is heavy — and make it faster or cheaper",
                 "Improve an algorithm: fuzzy line matching in PatchHandler.cs, token estimation in TokenEstimator.cs, or stall detection in ChatOrchestrator.cs",
                 "Implement a useful feature: a new slash command, tool, or convenience behavior a user would notice",
-                "Fix a real bug you noticed while reading the code (you spotted one in BuildVerifier.cs earlier — verify and fix it)"
+                "Fix a real bug you noticed while reading the code — verify and fix it"
             ];
         }
 

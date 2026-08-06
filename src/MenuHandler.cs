@@ -61,7 +61,7 @@ public static class MenuHandler
         var lines = new List<string>();
         while (true)
         {
-            ConsoleStyler.Write("> ", ConsoleColor.Green);
+            ConsoleStyler.Write("❯ ", ConsoleColor.Green);
             var line = Console.ReadLine();
             if (line is null) break;
             if (lines.Count == 0 && string.IsNullOrWhiteSpace(line)) return "";

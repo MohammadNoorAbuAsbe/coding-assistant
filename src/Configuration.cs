@@ -24,9 +24,17 @@ public static class Configuration
         var envPath = FindEnvFile();
         if (envPath == null) return;
 
-        foreach (var line in File.ReadAllLines(envPath))
+        try
         {
-            TrySetEnvironmentVariable(line);
+            foreach (var line in File.ReadAllLines(envPath))
+            {
+                TrySetEnvironmentVariable(line);
+            }
+        }
+        catch (Exception ex)
+        {
+            using (ConsoleStyler.WithColor(ConsoleColor.Red))
+                Console.Error.WriteLine($"Error loading .env file at {envPath}: {ex.Message}");
         }
     }
 

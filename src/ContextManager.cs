@@ -169,7 +169,23 @@ public static class ContextManager
             }
         }
 
+        // Final safeguard: if the assembled history still exceeds maxTokens (e.g. due to 
+        // rounding or a very large summary), truncate the oldest conversation turns 
+        // until it fits. This prevents API 400 errors.
+        while (result.Count > 0 && EstimateTotalTokens(result) > maxTokens)
+        {
+            // Find the first conversation turn that isn't a system message and remove it.
+            int firstRemovable = result.FindIndex(m => m is not SystemChatMessage);
+            if (firstRemovable == -1) break;
+            result.RemoveAt(firstRemovable);
+        }
+
         return result;
+    }
+
+    private static int EstimateTotalTokens(List<ChatMessage> messages)
+    {
+        return messages.Sum(EstimateMessageTokens);
     }
 
     private static string BuildTemplateSummary(List<ChatMessage> messages, ChatMessage? existingSummary)
@@ -192,7 +208,7 @@ public static class ContextManager
             {
                 todoState = ExtractText(toolMsg.Content);
             }
-            else if (msg is UserChatMessage userMsg && userMsg.Content != null && buildState == null && ExtractText(userMsg.Content).StartsWith("Automatic build verification", StringComparison.Ordinal))
+            else if (msg is UserChatMessage userMsg && userMsg.Content != null && buildState == null && (ExtractText(userMsg.Content).StartsWith("Automatic build verification", StringComparison.Ordinal) || ExtractText(userMsg.Content).Contains("— Build Verification —")))
             {
                 buildState = ExtractText(userMsg.Content);
             }

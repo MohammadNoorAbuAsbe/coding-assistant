@@ -12,11 +12,12 @@ public static class AppBootstrapper
 
     public static string ResolveModel(string providerId, ProviderConfig providerConfig)
     {
-        var envProvider = Environment.GetEnvironmentVariable("AI_PROVIDER");
         var envModel = Environment.GetEnvironmentVariable("AI_MODEL");
-        return envProvider != null && envModel != null
-            ? envModel
-            : MenuHandler.SelectModel(providerId, providerConfig);
+        if (!string.IsNullOrEmpty(envModel))
+        {
+            return envModel;
+        }
+        return MenuHandler.SelectModel(providerId, providerConfig);
     }
 
     public sealed class CancelController

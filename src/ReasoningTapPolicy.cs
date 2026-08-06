@@ -147,7 +147,11 @@ internal sealed class SseReasoningTeeStream : Stream
 
             string eventText = Encoding.UTF8.GetString(_buffer, searchFrom, end - searchFrom);
             HandleEvent(eventText);
-            consumed = end + (end + 1 < _length && _buffer[end + 1] == '\n' ? 2 : 4);
+            
+            // The event ends with a double-newline. We must consume both.
+            // If it was \n\n, that's 2 bytes. If it was \r\n\r\n, that's 4 bytes.
+            int separatorLength = (_buffer[end] == '\r') ? 4 : 2;
+            consumed = end + separatorLength;
             searchFrom = consumed;
         }
 

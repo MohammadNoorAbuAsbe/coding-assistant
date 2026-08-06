@@ -69,7 +69,7 @@ public class ContextUsageTrackerTests
         ContextUsageTracker.RecordOutputTokens(0);
 
         Assert.Equal(1.0, ContextUsageTracker.GetCorrectionFactor());
-        Assert.Equal((0, 0, 0), ContextUsageTracker.GetStats());
+        Assert.Equal((0, 0, 0, 1.0), ContextUsageTracker.GetStats());
     }
 
     [Fact]
@@ -118,7 +118,7 @@ public class ContextUsageTrackerTests
         ContextUsageTracker.Reset();
 
         Assert.Equal(1.0, ContextUsageTracker.GetCorrectionFactor());
-        Assert.Equal((0, 0, 0), ContextUsageTracker.GetStats());
+        Assert.Equal((0, 0, 0, 1.0), ContextUsageTracker.GetStats());
         Assert.Equal(1000, ContextUsageTracker.GetAdjustedBudget(1000));
     }
 

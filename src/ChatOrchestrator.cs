@@ -101,7 +101,7 @@ public static class ChatOrchestrator
             using (ConsoleStyler.WithColor(ConsoleColor.Yellow))
                 await Console.Error.WriteAsync(maxIterations == null ? $"[{iteration + 1}]" : $"[{iteration + 1}/{maxIterations}]");
             using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
-                await Console.Error.WriteLineAsync(" Thinking...");
+                await Console.Error.WriteLineAsync(" 💭 Thinking...");
 
             var (accumulatedToolCalls, responseContent) = await FetchWithEmptyResponseRetryAsync(client, messages, options, cancellationToken);
 
@@ -416,7 +416,7 @@ public static class ChatOrchestrator
     private static void DisplayToolName(string functionName)
     {
         using (ConsoleStyler.WithColor(ConsoleColor.Magenta))
-            Console.Error.Write($"\n[Tool: ");
+            Console.Error.Write($"\n⚙  [Tool: ");
         using (ConsoleStyler.WithColor(ConsoleColor.Yellow))
             Console.Error.Write($"{functionName}");
         using (ConsoleStyler.WithColor(ConsoleColor.Magenta))
@@ -778,6 +778,13 @@ internal static class StallDetector
             string? oldString = ExtractStringProperty(args, "old_string");
             string oldKey = oldString == null ? "?" : HashText(oldString);
             return $"Edit|{primary}|{oldKey}";
+        }
+
+        if (functionName == ToolHandler.ApplyPatchFunctionName)
+        {
+            string? oldString = ExtractStringProperty(args, "old_string");
+            string oldKey = oldString == null ? "?" : HashText(oldString);
+            return $"ApplyPatch|{primary}|{oldKey}";
         }
 
         return $"{functionName}|{primary}";

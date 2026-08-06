@@ -24,7 +24,8 @@ public static class TokenEstimator
             || model.Contains("o3", StringComparison.Ordinal)
             || model.Contains("o4", StringComparison.Ordinal)
             || model.Contains("chatgpt", StringComparison.Ordinal)
-            || model.Contains("gpt-oss", StringComparison.Ordinal);
+            || model.Contains("gpt-oss", StringComparison.Ordinal)
+            || model.Contains("deepseek", StringComparison.Ordinal);
     }
 
     private static TiktokenTokenizer GetTiktokenTokenizer()

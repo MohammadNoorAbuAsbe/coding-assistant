@@ -26,11 +26,11 @@ public static class AnsiRenderer
         if (trimmed.StartsWith("```"))
         {
             inCodeBlock = !inCodeBlock;
-            return inCodeBlock ? $"{Esc}[97;100m" : $"{Esc}[0m";
+            return inCodeBlock ? $"{Esc}[38;5;250;48;5;235m" : $"{Esc}[0m";
         }
 
         if (inCodeBlock)
-            return $"{Esc}[97;100m{text}{Esc}[0m";
+            return $"{Esc}[38;5;250;48;5;235m{text}{Esc}[0m";
 
         return ProcessInline(ProcessBlockLevel(text));
     }
@@ -67,7 +67,7 @@ public static class AnsiRenderer
 
     static string ProcessInline(string text)
     {
-        text = InlineCode.Replace(text, m => $"{Esc}[97;100m{m.Groups[1].Value}{Esc}[0m");
+        text = InlineCode.Replace(text, m => $"{Esc}[38;5;250;48;5;235m{m.Groups[1].Value}{Esc}[0m");
         text = BoldItalic.Replace(text, m => $"{Esc}[1;3m{m.Groups[1].Value}{Esc}[23;22m");
         text = Bold.Replace(text, m => $"{Esc}[1m{m.Groups[1].Value}{Esc}[22m");
         text = Italic.Replace(text, m => $"{Esc}[3m{m.Groups[1].Value}{Esc}[23m");

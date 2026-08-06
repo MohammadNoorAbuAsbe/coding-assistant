@@ -92,11 +92,11 @@ public static class ContextUsageTracker
         return Math.Max(1, (int)Math.Round(rawBudget / factor));
     }
 
-    public static (long TotalInputTokens, long TotalOutputTokens, int RequestCount) GetStats()
+    public static (long TotalInputTokens, long TotalOutputTokens, int RequestCount, double CorrectionFactor) GetStats()
     {
         lock (Gate)
         {
-            return (_totalInputTokens, _totalOutputTokens, _requestCount);
+            return (_totalInputTokens, _totalOutputTokens, _requestCount, _hasSamples ? _correctionEma : 1.0);
         }
     }
 
