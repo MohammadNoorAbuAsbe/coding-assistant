@@ -84,8 +84,10 @@ public static class ChatOrchestrator
         CancellationToken cancellationToken)
     {
         int skippedEditNudges = 0;
-        string? lastToolCallFingerprint = null;
-        int consecutiveToolCallCount = 0;
+        var stallTracker = new StallTracker();
+        int stallInterventions = 0;
+        int journalCount = UndoJournal.List().Count;
+        int turnsSinceFileChange = 0;
 
         for (int iteration = 0; maxIterations == null || iteration < maxIterations; iteration++)
         {
@@ -125,14 +127,40 @@ public static class ChatOrchestrator
             await Console.Error.WriteLineAsync();
             messages = await FinalizeToolCallsAsync(accumulatedToolCalls, messages, contextWindowSize, cancellationToken);
 
-            if (StallDetector.ShouldInterruptStall(
-                    StallDetector.Fingerprint(messages),
-                    ref lastToolCallFingerprint,
-                    ref consecutiveToolCallCount))
+            int newJournalCount = UndoJournal.List().Count;
+            if (newJournalCount != journalCount)
             {
+                journalCount = newJournalCount;
+                turnsSinceFileChange = 0;
+            }
+            else if (turnsSinceFileChange >= MaxExplorationTurns)
+            {
+                turnsSinceFileChange = 0;
+                using (ConsoleStyler.WithColor(ConsoleColor.Yellow))
+                    await Console.Error.WriteLineAsync("\n[No progress] The model has explored for many turns without changing any file — urging it to implement something.");
+                messages.Add(new UserChatMessage("You have spent many tool calls exploring (reading/searching) without making any file changes. STOP exploring. Pick ONE concrete improvement right now and implement it with a single Edit, ApplyPatch, or Write call. Then end your turn with a short summary of what you changed."));
+            }
+            else
+            {
+                turnsSinceFileChange++;
+            }
+
+            if (stallTracker.Observe(StallDetector.Fingerprint(messages)))
+            {
+                stallInterventions++;
+                if (stallInterventions >= MaxStallInterventions)
+                {
+                    using (ConsoleStyler.WithColor(ConsoleColor.Yellow))
+                        await Console.Error.WriteLineAsync("\n[Loop detected] The model is stuck in a repeating tool-call loop — ending this turn.");
+                    messages.Add(new UserChatMessage("You are stuck in a repeating tool-call loop and have ignored prior warnings. STOP calling tools. End your turn now with a short summary of what you accomplished (or state that nothing was accomplished)."));
+                    break;
+                }
+
                 using (ConsoleStyler.WithColor(ConsoleColor.Yellow))
                     await Console.Error.WriteLineAsync("\n[Loop detected] Stopping the repeated tool call; urging the model to take a different action.");
-                messages.Add(new UserChatMessage("You are repeating the same tool call. Stop this loop immediately: Read the relevant file fresh (a wide range), fix the problem correctly with a single Edit or ApplyPatch, or abandon it and move on to a different task. Do NOT issue this exact tool call again."));
+                messages.Add(stallInterventions == 1
+                    ? new UserChatMessage("You are repeating the same tool call. Stop this loop immediately: Read the relevant file fresh (a wide range), fix the problem correctly with a single Edit or ApplyPatch, or abandon it and move on to a different task. Do NOT issue this exact tool call again.")
+                    : new UserChatMessage("You are STILL repeating the same tool call. This is your final warning: abandon the current approach entirely. If you made changes, summarize them now. If not, pick a completely different improvement and implement it, or end your turn with a summary. Do not repeat any previous tool call."));
             }
         }
     }
@@ -363,7 +391,7 @@ public static class ChatOrchestrator
             acc.Arguments += toolUpdate.FunctionArgumentsUpdate.ToString();
             if (!acc.ArgDisplayed)
             {
-                string? primaryArg = ExtractFirstStringValue(acc.Arguments);
+                string? primaryArg = ExtractPrimaryArg(acc.FunctionName, acc.Arguments);
                 if (primaryArg != null)
                 {
                     acc.ArgDisplayed = true;
@@ -392,9 +420,27 @@ public static class ChatOrchestrator
             Console.Error.Write($"] ");
     }
 
+    internal static string? ExtractPrimaryArg(string functionName, string json)
+    {
+        // Tools with a path-like parameter: prefer it over whatever string
+        // happens to come first in the JSON (models stream keys in arbitrary
+        // order, so "Read|200" would otherwise display/fingerprint start_line
+        // instead of the actual file).
+        string? specific = ExtractStringProperty(json, "file_path")
+            ?? ExtractStringProperty(json, "pattern")
+            ?? ExtractStringProperty(json, "path");
+        return specific ?? ExtractFirstStringValue(json);
+    }
+
     internal static string? ExtractFirstStringValue(string json)
     {
         var match = System.Text.RegularExpressions.Regex.Match(json, @"""[^""\\]+"":\s*""((?:[^""\\]|\\.)*)""");
+        return match.Success ? match.Groups[1].Value : null;
+    }
+
+    private static string? ExtractStringProperty(string json, string key)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(json, $@"""{key}"":\s*""((?:[^""\\]|\\.)*)""");
         return match.Success ? match.Groups[1].Value : null;
     }
 
@@ -478,7 +524,7 @@ public static class ChatOrchestrator
         string content = ContextManager.ExtractText(toolMsg.Content);
         bool isError = content.StartsWith("Error:");
         string symbol = isError ? "✗" : "✓";
-        string? primaryArg = ExtractFirstStringValue(toolCall.FunctionArguments?.ToString() ?? "");
+        string? primaryArg = ExtractPrimaryArg(toolCall.FunctionName, toolCall.FunctionArguments?.ToString() ?? "");
 
         if (!isError)
         {
@@ -595,6 +641,10 @@ public static class ChatOrchestrator
 
     private const int MaxSkippedEditNudges = 2;
 
+    private const int MaxStallInterventions = 3;
+
+    private const int MaxExplorationTurns = 8;
+
     // Only nudge when the model's previous turn was text-only. If it already
     // executed tool calls, a fenced before/after block in the summary is a
     // legitimate diff display — not a skipped edit — and nudging it would put
@@ -669,21 +719,22 @@ public class ToolCallAccumulator
 }
 
 /// <summary>
-/// Detects degenerate loops where the model issues the same tool call
-/// (same function + same primary argument) over and over — e.g. re-reading
-/// the same file or re-attempting the same failed edit in a tight cycle.
-/// After a configurable number of consecutive identical calls, an
-/// intervention message is injected to force the model to take a different
-/// action. Applies to both normal and autopilot mode.
+/// Detects degenerate loops where the model issues the same tool call over
+/// and over. Detection is result-aware: a call is only a stall when BOTH the
+/// call (function + its distinguishing arguments) AND the result it produces
+/// repeat — a repeated call that returns different content (e.g. re-reading a
+/// file that changed, or a retry that now succeeds) is progress, not a stall.
+/// Detection is window-based: a call is flagged when the same fingerprint
+/// appears at least maxRepeats times within the last windowSize calls, which
+/// also catches loops that alternate between two or three calls.
 /// </summary>
 internal static class StallDetector
 {
-    internal const int ConsecutiveRepeatLimit = 3;
-
     /// <summary>
-    /// Fingerprint of the most recent assistant tool call: function name plus
-    /// the first string argument value. Returns null when the last assistant
-    /// message has no tool calls.
+    /// Fingerprint of the most recent assistant tool call: the function name,
+    /// its distinguishing arguments (file_path, line range, search scope, edit
+    /// target), and a hash of the result that call produced. Returns null when
+    /// the last assistant message has no tool calls.
     /// </summary>
     internal static string? Fingerprint(List<ChatMessage> messages)
     {
@@ -695,36 +746,127 @@ internal static class StallDetector
             {
                 var call = assistant.ToolCalls[0];
                 string args = call.FunctionArguments?.ToString() ?? "";
-                string? primary = ChatOrchestrator.ExtractFirstStringValue(args);
-                return $"{call.FunctionName}|{primary}";
+                string callKey = BuildCallKey(call.FunctionName, args);
+                string resultKey = FindResultKey(messages, i);
+                return $"{callKey}|{resultKey}";
             }
         }
         return null;
     }
 
-    /// <summary>
-    /// Feeds the current fingerprint into the stall tracker. Returns true
-    /// when the same fingerprint has been seen ConsecutiveRepeatLimit times
-    /// in a row, and resets the tracker so the intervention fires at most
-    /// once per stall.
-    /// </summary>
-    internal static bool ShouldInterruptStall(string? fingerprint, ref string? lastFingerprint, ref int consecutiveCount)
+    private static string BuildCallKey(string functionName, string args)
     {
-        if (fingerprint != null && fingerprint == lastFingerprint)
+        string primary = ChatOrchestrator.ExtractPrimaryArg(functionName, args) ?? "?";
+
+        if (functionName == ToolHandler.ReadFunctionName)
         {
-            consecutiveCount++;
-        }
-        else
-        {
-            consecutiveCount = 1;
+            return $"Read|{primary}|{ReadRange(args)}";
         }
 
-        lastFingerprint = fingerprint;
-
-        if (consecutiveCount >= ConsecutiveRepeatLimit)
+        if (functionName == ToolHandler.GrepFunctionName)
         {
-            consecutiveCount = 0;
-            lastFingerprint = null;
+            string? include = ExtractStringProperty(args, "include");
+            string? path = ExtractStringProperty(args, "path");
+            return $"Grep|{primary}|{include}|{path}";
+        }
+
+        if (functionName == ToolHandler.EditFunctionName)
+        {
+            string? oldString = ExtractStringProperty(args, "old_string");
+            string oldKey = oldString == null ? "?" : HashText(oldString);
+            return $"Edit|{primary}|{oldKey}";
+        }
+
+        return $"{functionName}|{primary}";
+    }
+
+    private static string ReadRange(string args)
+    {
+        string? start = ExtractStringProperty(args, "start_line");
+        string? end = ExtractStringProperty(args, "end_line");
+        return $"{(string.IsNullOrEmpty(start) ? "?" : start)}-{(string.IsNullOrEmpty(end) ? "?" : end)}";
+    }
+
+    /// <summary>
+    /// Hash of the content of the first tool result that follows the assistant
+    /// message at index toolCallIndex, or "?" when no result is present.
+    /// </summary>
+    private static string FindResultKey(List<ChatMessage> messages, int toolCallIndex)
+    {
+        for (int i = toolCallIndex + 1; i < messages.Count; i++)
+        {
+            if (messages[i] is AssistantChatMessage)
+                break;
+            if (messages[i] is ToolChatMessage result)
+            {
+                string text = ContextManager.ExtractText(result.Content);
+                return text.Length == 0 ? "empty" : HashText(text);
+            }
+        }
+        return "?";
+    }
+
+    private static string? ExtractStringProperty(string json, string key)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(json, $@"""{key}"":\s*""((?:[^""\\]|\\.)*)""");
+        return match.Success ? match.Groups[1].Value : null;
+    }
+
+    private static string HashText(string text)
+    {
+        var bytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text));
+        return Convert.ToHexString(bytes)[..12];
+    }
+}
+
+/// <summary>
+/// Tracks the recent tool-call fingerprints within a sliding window.
+/// </summary>
+internal sealed class StallTracker
+{
+    internal const int DefaultWindowSize = 5;
+    internal const int DefaultMaxRepeats = 3;
+
+    private readonly List<string> _recent = new(DefaultWindowSize);
+    private readonly int _windowSize;
+    private readonly int _maxRepeats;
+
+    public StallTracker(int windowSize = DefaultWindowSize, int maxRepeats = DefaultMaxRepeats)
+    {
+        _windowSize = windowSize;
+        _maxRepeats = maxRepeats;
+    }
+
+    /// <summary>
+    /// Feeds the fingerprint of the most recent assistant tool call into the
+    /// tracker. Returns true when the same fingerprint has appeared at least
+    /// maxRepeats times within the last windowSize calls; the window is then
+    /// cleared so each stall triggers exactly one intervention. A text-only
+    /// turn (null fingerprint) clears the window.
+    /// </summary>
+    public bool Observe(string? fingerprint)
+    {
+        if (fingerprint == null)
+        {
+            _recent.Clear();
+            return false;
+        }
+
+        _recent.Add(fingerprint);
+        if (_recent.Count > _windowSize)
+        {
+            _recent.RemoveAt(0);
+        }
+
+        int count = 0;
+        foreach (var f in _recent)
+        {
+            if (f == fingerprint) count++;
+        }
+
+        if (count >= _maxRepeats)
+        {
+            _recent.Clear();
             return true;
         }
 
