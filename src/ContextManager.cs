@@ -124,7 +124,7 @@ public static class ContextManager
         }
 
         // Build summary only from dropped messages to avoid reprocessing kept messages
-        string summaryText = BuildTemplateSummary(plan.DroppedMessages, existingSummary);
+        string summaryText = BuildTemplateSummary(messages, existingSummary);
         var summary = CreateSummaryMessage(summaryText, plan.DroppedReadFiles);
         return Assemble(plan, summary, maxTokens);
     }

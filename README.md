@@ -1,9 +1,10 @@
-# Terminal AI Coding Assistant
+# Coding Assistant
 
-A terminal-based AI coding assistant that uses LLMs to read, write, edit, search, and execute code through tool calls. Supports **Ollama** (local models), **OpenRouter**, **OpenAI**, and **Google Gemini** (free tier).
+An AI coding assistant that uses LLMs to read, write, edit, search, and execute code through tool calls. Ships as a **modern Windows desktop app** (WebView2 UI: file explorer, diff-backed changes panel, task lists, session tabs). Supports **Ollama** (local models), **OpenRouter**, **OpenAI**, and **Google Gemini** (free tier).
 
 ## Features
 
+- **Desktop app (Windows)** — borderless native shell with session tabs, sidebar file tree, live tool cards, reasoning viewer, undo journal, command palette and settings drawer; runs on the WebView2 Runtime
 - **Multi-provider** — Ollama (local), OpenRouter, OpenAI, and Google Gemini (cloud)
 - **Interactive menu** — select provider, model, and enter prompts in a loop
 - **13 tools**: Read, Write, Edit (fuzzy match), ApplyPatch (unified diffs, fuzzy), Diff (change previews), Bash, Glob, Grep (ripgrep), WebFetch (URLs), WebSearch (Tavily), Question (interactive), Task (sub-agents), TodoWrite (task lists)
@@ -27,6 +28,7 @@ A terminal-based AI coding assistant that uses LLMs to read, write, edit, search
 ## Prerequisites
 
 - [.NET 10.0](https://dotnet.microsoft.com/download/dotnet/10.0)
+- **WebView2 Runtime** (for the desktop app) — preinstalled on Windows 11 and most Windows 10 machines; install from https://developer.microsoft.com/microsoft-edge/webview2 if missing
 - One of: **Ollama** running locally, **OpenRouter** API key, **OpenAI** API key, or **Google Gemini** API key (free tier)
 - **ripgrep** (`rg`) for the Grep tool — install via `winget install BurntSushi.ripgrep.MSVC`
 - **Tavily API key** (optional) for the WebSearch tool — get one at [tavily.com](https://tavily.com)
@@ -45,7 +47,19 @@ A terminal-based AI coding assistant that uses LLMs to read, write, edit, search
    ```sh
    dotnet run
    ```
-4. Use the interactive menu to select a provider, model, and enter your prompt.
+4. On Windows this launches the **desktop app** — a true GUI executable with no console window (the working folder is the folder you launch from; change it anytime with the folder button or `Ctrl+O`). The model's streamed answer, reasoning and tool calls appear only in the app.
+
+### Desktop app
+
+- **Sessions** — each tab is an independent conversation (`Ctrl+N` for a new session); sessions are in-memory for the current run
+- **Sidebar** — browse the workspace, filter files, open read-only previews; the *Changes* panel mirrors the undo journal (revert any entry); *Tasks* tracks the agent's todo list
+- **Composer** — slash commands (`/help`, `/new`, `/undo`, `/history`, `/autopilot`, `/theme`, `/exit`), `Ctrl+K` palette, `Ctrl+,` settings, `Ctrl+B` sidebar
+- **Settings** — switch provider/model (persisted to `%LOCALAPPDATA%\CodingAssistant\settings.json`), theme and font size
+- **Build a release**:
+  ```sh
+  dotnet publish -c Release -p:PublishProfile=win-x64
+  ```
+  Produces a single-file, self-contained `bin\publish\win-x64\CodingAssistant.exe`.
 
 ### Provider-specific notes
 
@@ -167,7 +181,11 @@ The assistant has 13 tools that it can call autonomously:
 
 ```
 src/
-├── Program.cs            # Entry point with interactive loop
+├── Program.cs            # Entry point — always launches the desktop app
+├── AppUi.cs              # Event bus to the UI (stream, tools, reasoning, todos, changes…)
+├── Desktop/              # WebView2 host: borderless MainForm, message router, file tree,
+│                         #   settings store, embedded-web extraction (Windows only)
+├── Web/                  # Frontend: index.html, styles.css, app.js, vendor libs (embedded)
 ├── AppBootstrapper.cs    # Provider and model resolution, cancel handler setup
 ├── Autopilot.cs          # Autonomous mode — infinite self-improvement loop
 ├── ChatSession.cs        # Chat session management (messages, reset, etc.)
@@ -201,7 +219,7 @@ src/
 dotnet build
 ```
 
-The compiled output will be in `bin/Debug/net10.0/`.
+The compiled output will be in `bin/Debug/net10.0-windows/`.
 
 ## Testing
 

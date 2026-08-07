@@ -48,6 +48,7 @@ Rules:
                 await Console.Error.WriteLineAsync("[Autopilot] Autonomous mode started. The agent will keep improving the project until you press Ctrl+C.");
             using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
                 await Console.Error.WriteLineAsync("[Autopilot] Changes apply to the source on disk; the running process keeps executing the old code until you restart.");
+            AppUi.Send("autopilot", new { active = true, cycle = 0, message = "Autonomous mode started — the agent keeps improving the project until stopped." });
 
             while (true)
             {
@@ -57,6 +58,7 @@ Rules:
                 cycle++;
                 using (ConsoleStyler.WithColor(ConsoleColor.Cyan))
                     await Console.Error.WriteLineAsync($"\n================ Autopilot cycle {cycle} ================");
+                AppUi.Send("autopilot", new { active = true, cycle, message = $"Autopilot cycle {cycle}" });
 
                 int journalCount = UndoJournal.List().Count;
                 string prompt = forceChangeNextCycle
@@ -68,6 +70,7 @@ Rules:
                 {
                     using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
                         await Console.Error.WriteLineAsync("\n[Autopilot] Stopped by user.");
+                    AppUi.Send("autopilot", new { active = false, cycle, message = "Autopilot stopped by user." });
                     break;
                 }
 
@@ -97,5 +100,6 @@ Rules:
 
         using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
             await Console.Error.WriteLineAsync($"[Autopilot] Session ended after {cycle} cycle(s). Changes are on disk — restart the app to run them.");
+        AppUi.Send("autopilot", new { active = false, cycle, message = $"Autopilot ended after {cycle} cycle(s)." });
     }
 }

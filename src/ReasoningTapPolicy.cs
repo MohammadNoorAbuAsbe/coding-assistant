@@ -6,13 +6,6 @@ using System.Text.Json;
 
 namespace TerminalAiAssistant;
 
-/// <summary>
-/// Taps the raw SSE response stream of chat completions and extracts the model's
-/// reasoning content (chain of thought), which the OpenAI SDK silently drops.
-/// Recognizes the field names used by different providers: "reasoning_content"
-/// (OpenAI o-series, DeepSeek, Ollama), "reasoning" (Qwen3, Gemini via OpenRouter),
-/// and "thinking" (Gemini). Set HIDE_REASONING=1 to disable.
-/// </summary>
 internal sealed class ReasoningTapPolicy : PipelinePolicy
 {
     internal static readonly ConcurrentQueue<string> Pending = new();
@@ -49,10 +42,6 @@ internal sealed class ReasoningTapPolicy : PipelinePolicy
     }
 }
 
-/// <summary>
-/// Pass-through stream that observes SSE events and pushes reasoning fragments
-/// into <see cref="ReasoningTapPolicy.Pending"/> without altering the byte stream.
-/// </summary>
 internal sealed class SseReasoningTeeStream : Stream
 {
     private static readonly string[] ReasoningKeys = ["reasoning_content", "reasoning", "thinking"];
@@ -148,8 +137,6 @@ internal sealed class SseReasoningTeeStream : Stream
             string eventText = Encoding.UTF8.GetString(_buffer, searchFrom, end - searchFrom);
             HandleEvent(eventText);
             
-            // The event ends with a double-newline. We must consume both.
-            // If it was \n\n, that's 2 bytes. If it was \r\n\r\n, that's 4 bytes.
             int separatorLength = (_buffer[end] == '\r') ? 4 : 2;
             consumed = end + separatorLength;
             searchFrom = consumed;
@@ -163,10 +150,6 @@ internal sealed class SseReasoningTeeStream : Stream
         }
     }
 
-    /// <summary>
-    /// Finds the end of the SSE event starting at <paramref name="start"/>: either
-    /// "\n\n" (LF) or "\r\n\r\n" (CRLF). Returns the index of the first separator byte.
-    /// </summary>
     private int FindEventEnd(int start)
     {
         for (int i = start; i + 1 < _length; i++)
@@ -231,3 +214,4 @@ internal sealed class SseReasoningTeeStream : Stream
         }
     }
 }
+

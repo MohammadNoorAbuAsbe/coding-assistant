@@ -24,6 +24,10 @@ internal static class TodoWriteHandler
                 _todos = args.todos;
                 string formatted = FormatTodoList(_todos);
                 PrintTodoList(formatted);
+                AppUi.Send("todos", new
+                {
+                    items = _todos.Select(t => new { t.Content, t.Status, t.Priority })
+                });
                 return new ToolChatMessage(toolCall.Id, formatted);
             });
     }

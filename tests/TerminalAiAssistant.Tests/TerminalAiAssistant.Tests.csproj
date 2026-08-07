@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\TerminalAiAssistant.csproj" />
+    <Reference Remove="Microsoft.Web.WebView2.Wpf" />
   </ItemGroup>
 
 </Project>

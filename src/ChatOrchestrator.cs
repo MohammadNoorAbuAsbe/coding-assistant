@@ -8,7 +8,9 @@ public static class ChatOrchestrator
 {
     public static async Task Run(ChatSession session, string prompt, CancellationToken cancellationToken = default)
     {
+        Diag.Log("orchestrator:enter prompt=" + (prompt.Length > 60 ? prompt[..60] + "…" : prompt));
         var client = ChatService.CreateClient();
+        Diag.Log("orchestrator:client-ok provider=" + Configuration.GetProvider() + " model=" + Configuration.GetModel());
         var options = ToolHandler.CreateCompletionOptions();
         var provider = Configuration.GetProvider();
         var maxIterations = Configuration.GetMaxIterations();
@@ -22,14 +24,24 @@ public static class ChatOrchestrator
             {
                 var ctxSource = Configuration.GetContextWindowSource();
                 var ctxLabel = ctxSource == null ? $"{contextWindowSize}" : $"{contextWindowSize} ({ctxSource})";
-                await Console.Error.WriteLineAsync($"{provider} · {Configuration.GetModel()} · ctx={ctxLabel} · max_iter={maxIterations?.ToString() ?? "unlimited"}");
+                await Console.Error.WriteLineAsync($"  ⚡ [NEURAL LINK] {provider} · {Configuration.GetModel()} · ctx={ctxLabel} · max_iter={maxIterations?.ToString() ?? "unlimited"}");
             }
+            AppUi.Send("meta", new
+            {
+                provider,
+                model = Configuration.GetModel(),
+                context = contextWindowSize,
+                workspace = System.Environment.CurrentDirectory
+            });
             session.SessionStarted = true;
         }
 
         session.Messages.Add(new UserChatMessage(prompt));
+        Diag.Log("orchestrator:pre-loop messages=" + session.Messages.Count);
         await RunAgentLoop(client, session.Messages, options, maxIterations, contextWindowSize, cancellationToken);
+        Diag.Log("orchestrator:loop-done");
         session.Messages = await ContextManager.TruncateMessagesAsync(session.Messages, GetMessageBudget(contextWindowSize), cancellationToken);
+        Diag.Log("orchestrator:done");
     }
 
     private static int GetMessageBudget(int contextWindowSize)
@@ -52,8 +64,9 @@ public static class ChatOrchestrator
 
             using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
                 await Console.Error.WriteLineAsync(maxIterations == null
-                    ? $"  [sub-agent iteration {iteration + 1}]"
-                    : $"  [sub-agent {iteration + 1}/{maxIterations}]");
+                    ? $"  ⚡ [Sub-Agent Iteration {iteration + 1}]"
+                    : $"  ⚡ [Sub-Agent {iteration + 1}/{maxIterations}]");
+            AppUi.Send("subagent", new { active = true, iteration = iteration + 1 });
 
             var (accumulatedToolCalls, responseContent) = await FetchWithEmptyResponseRetryAsync(client, messages, options, cancellationToken);
 
@@ -94,14 +107,13 @@ public static class ChatOrchestrator
             if (cancellationToken.IsCancellationRequested)
             {
                 using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
-                    await Console.Error.WriteLineAsync("\n[Cancelled]");
+                    await Console.Error.WriteLineAsync("\n  ⚠️ [Neural Link Cancelled]");
+                AppUi.Send("status", new { message = "Operation cancelled" });
                 break;
             }
 
-            using (ConsoleStyler.WithColor(ConsoleColor.Yellow))
-                await Console.Error.WriteAsync(maxIterations == null ? $"[{iteration + 1}]" : $"[{iteration + 1}/{maxIterations}]");
-            using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
-                await Console.Error.WriteLineAsync(" 💭 Thinking...");
+            AppUi.Send("iter", new { n = iteration + 1, max = maxIterations });
+            NeuralSpinner.RenderThoughtHeader(iteration + 1, maxIterations);
 
             var (accumulatedToolCalls, responseContent) = await FetchWithEmptyResponseRetryAsync(client, messages, options, cancellationToken);
 
@@ -139,7 +151,8 @@ public static class ChatOrchestrator
                 {
                     turnsSinceFileChange = 0;
                     using (ConsoleStyler.WithColor(ConsoleColor.Yellow))
-                        await Console.Error.WriteLineAsync("\n[Autopilot directive] No file changes for many turns — supplying concrete tasks.");
+                        await Console.Error.WriteLineAsync("\n  ⚡ [Autopilot Directive] Quantum equilibrium reached; injecting swarm directive.");
+                    AppUi.Send("status", new { message = "No changes recently — injecting autopilot directive" });
                     messages.Add(new UserChatMessage(AutopilotSuggestions.BuildDirective()));
                 }
                 else
@@ -154,13 +167,15 @@ public static class ChatOrchestrator
                 if (stallInterventions >= MaxStallInterventions)
                 {
                     using (ConsoleStyler.WithColor(ConsoleColor.Yellow))
-                        await Console.Error.WriteLineAsync("\n[Loop detected] The model is stuck in a repeating tool-call loop — ending this turn.");
+                        await Console.Error.WriteLineAsync("\n  ⚠️ [Neural Loop Detected] Terminating repeated resonance loop.");
+                    AppUi.Send("error", new { message = "Loop detected — stopped after repeated identical tool calls" });
                     messages.Add(new UserChatMessage("You are stuck in a repeating tool-call loop and have ignored prior warnings. STOP calling tools. End your turn now with a short summary of what you accomplished (or state that nothing was accomplished)."));
                     break;
                 }
 
                 using (ConsoleStyler.WithColor(ConsoleColor.Yellow))
-                    await Console.Error.WriteLineAsync("\n[Loop detected] Stopping the repeated tool call; urging the model to take a different action.");
+                    await Console.Error.WriteLineAsync("\n  ⚠️ [Neural Loop Detected] Breaking repetition pattern; re-orienting vector.");
+                AppUi.Send("status", new { message = "Loop detected — breaking repetition pattern" });
                 messages.Add(stallInterventions == 1
                     ? new UserChatMessage("You are repeating the same tool call. Stop this loop immediately: Read the relevant file fresh (a wide range), fix the problem correctly with a single Edit or ApplyPatch, or abandon it and move on to a different task. Do NOT issue this exact tool call again.")
                     : new UserChatMessage("You are STILL repeating the same tool call. This is your final warning: abandon the current approach entirely. If you made changes, summarize them now. If not, pick a completely different improvement and implement it, or end your turn with a summary. Do not repeat any previous tool call."));
@@ -219,15 +234,19 @@ public static class ChatOrchestrator
 
         if (usage != null)
         {
-            // messages is unmodified during streaming, so it still represents
-            // exactly what was sent in this request.
             long estimated = messages.Sum(m => (long)ContextManager.EstimateMessageTokens(m));
             ContextUsageTracker.Record((long)usage.InputTokenCount, estimated);
             ContextUsageTracker.RecordOutputTokens((long)usage.OutputTokenCount);
+            AppUi.Send("telemetry", new
+            {
+                input = usage.InputTokenCount,
+                output = usage.OutputTokenCount,
+                context = Configuration.GetContextWindowSize()
+            });
             if (Configuration.GetVerboseCtx())
             {
                 using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
-                    await Console.Error.WriteLineAsync($"  ctx: {usage.InputTokenCount:N0} in · {usage.OutputTokenCount:N0} out · est×{ContextUsageTracker.GetCorrectionFactor():0.00}");
+                    await Console.Error.WriteLineAsync($"  ⚡ [Neural Telemetry] {usage.InputTokenCount:N0} tokens in · {usage.OutputTokenCount:N0} tokens out");
             }
         }
 
@@ -270,7 +289,8 @@ public static class ChatOrchestrator
                 }
 
                 using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
-                    await Console.Error.WriteLineAsync($"    [empty response — retrying ({attempt + 1}/{EmptyResponseMaxRetries})...]");
+                    await Console.Error.WriteLineAsync($"    ⚡ [Neural Re-Sync] Empty transmission received — retrying ({attempt + 1}/{EmptyResponseMaxRetries})...");
+                AppUi.Send("status", new { message = $"Empty response — retrying ({attempt + 1}/{EmptyResponseMaxRetries})" });
                 try
                 {
                     await Task.Delay(1000 * (attempt + 1), cancellationToken);
@@ -304,6 +324,7 @@ public static class ChatOrchestrator
             }
 
             responseContent = (responseContent ?? "") + text;
+            AppUi.Send("stream", new { text });
             lineBuffer.Append(text);
 
             string buf = lineBuffer.ToString();
@@ -331,17 +352,21 @@ public static class ChatOrchestrator
 
         while (ReasoningTapPolicy.Pending.TryDequeue(out string? fragment))
         {
-            if (!reasoningOnLine)
+            /*if (!reasoningOnLine)
             {
                 using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
-                    Console.Error.Write("┆ ");
+                    Console.Error.Write("  │ 🔮 ");
                 reasoningOnLine = true;
-            }
+            }*/
             using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
                 Console.Error.Write(fragment);
+            AppUi.Send("reasoning", new { text = fragment });
         }
         if (reasoningOnLine)
+        {
+            Console.Error.WriteLine();
             Console.Error.Flush();
+        }
     }
 
     private static void ProcessToolCallUpdates(IReadOnlyList<StreamingChatToolCallUpdate>? toolCallUpdates, Dictionary<int, ToolCallAccumulator> accumulatedToolCalls)
@@ -356,7 +381,7 @@ public static class ChatOrchestrator
             if (!accumulatedToolCalls.ContainsKey(index))
                 AddNewToolCall(toolUpdate, index, accumulatedToolCalls);
 
-            UpdateExistingToolCall(toolUpdate, accumulatedToolCalls[index]);
+            UpdateExistingToolCall(toolUpdate, accumulatedToolCalls[index], index);
         }
     }
 
@@ -369,10 +394,10 @@ public static class ChatOrchestrator
             ExtraContent = GetToolCallExtraContent(toolUpdate)
         };
         if (!string.IsNullOrEmpty(toolUpdate.FunctionName))
-            DisplayToolName(toolUpdate.FunctionName);
+            DisplayToolName(toolUpdate.FunctionName, index);
     }
 
-    private static void UpdateExistingToolCall(StreamingChatToolCallUpdate toolUpdate, ToolCallAccumulator acc)
+    private static void UpdateExistingToolCall(StreamingChatToolCallUpdate toolUpdate, ToolCallAccumulator acc, int index)
     {
         var extraContent = GetToolCallExtraContent(toolUpdate);
         if (extraContent != null)
@@ -386,52 +411,46 @@ public static class ChatOrchestrator
             bool wasEmpty = string.IsNullOrEmpty(acc.FunctionName);
             acc.FunctionName = toolUpdate.FunctionName;
             if (wasEmpty)
-                DisplayToolName(toolUpdate.FunctionName);
+                DisplayToolName(toolUpdate.FunctionName, index);
         }
 
         if (toolUpdate.FunctionArgumentsUpdate != null && toolUpdate.FunctionArgumentsUpdate.ToMemory().Length > 0)
         {
             acc.Arguments += toolUpdate.FunctionArgumentsUpdate.ToString();
+            AppUi.Send("tool:args", new { id = $"call-{index}", args = toolUpdate.FunctionArgumentsUpdate.ToString() });
             if (!acc.ArgDisplayed)
             {
                 string? primaryArg = ExtractPrimaryArg(acc.FunctionName, acc.Arguments);
                 if (primaryArg != null)
                 {
                     acc.ArgDisplayed = true;
-                    Console.Error.Write(primaryArg);
+                    using (ConsoleStyler.WithColor(ConsoleColor.White))
+                        Console.Error.Write($"[{primaryArg}]");
                     Console.Error.Flush();
                 }
             }
         }
-        if (Environment.GetEnvironmentVariable("VERBOSE_TOOLS") == "1" &&
-            !string.IsNullOrEmpty(acc.Arguments) &&
-            !acc.ArgsLogged)
-        {
-            acc.ArgsLogged = true;
-            Console.Error.WriteLine($"\n[v] {acc.FunctionName}: {acc.Arguments}");
-            Console.Error.Flush();
-        }
     }
 
-    private static void DisplayToolName(string functionName)
+    private static void DisplayToolName(string functionName, int index)
     {
-        using (ConsoleStyler.WithColor(ConsoleColor.Magenta))
-            Console.Error.Write($"\n⚙  [Tool: ");
+        AppUi.Send("tool:start", new { id = $"call-{index}", name = functionName });
+        using (ConsoleStyler.WithColor(ConsoleColor.Cyan))
+            Console.Error.Write($"\n  ⚙  [QUANTUM TOOL EXECUTION] ");
         using (ConsoleStyler.WithColor(ConsoleColor.Yellow))
-            Console.Error.Write($"{functionName}");
-        using (ConsoleStyler.WithColor(ConsoleColor.Magenta))
-            Console.Error.Write($"] ");
+            Console.Error.Write($"⚡ {functionName} ");
+        using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
+            Console.Error.Write("→ ");
     }
 
     internal static string? ExtractPrimaryArg(string functionName, string json)
     {
-        // Tools with a path-like parameter: prefer it over whatever string
-        // happens to come first in the JSON (models stream keys in arbitrary
-        // order, so "Read|200" would otherwise display/fingerprint start_line
-        // instead of the actual file).
         string? specific = ExtractStringProperty(json, "file_path")
             ?? ExtractStringProperty(json, "pattern")
-            ?? ExtractStringProperty(json, "path");
+            ?? ExtractStringProperty(json, "path")
+            ?? ExtractStringProperty(json, "url")
+            ?? ExtractStringProperty(json, "query")
+            ?? ExtractStringProperty(json, "command");
         return specific ?? ExtractFirstStringValue(json);
     }
 
@@ -441,7 +460,7 @@ public static class ChatOrchestrator
         return match.Success ? match.Groups[1].Value : null;
     }
 
-    private static string? ExtractStringProperty(string json, string key)
+    internal static string? ExtractStringProperty(string json, string key)
     {
         var match = System.Text.RegularExpressions.Regex.Match(json, $@"""{key}"":\s*""((?:[^""\\]|\\.)*)""");
         return match.Success ? match.Groups[1].Value : null;
@@ -464,87 +483,68 @@ public static class ChatOrchestrator
 
         messages.Add(new AssistantChatMessage(assistantToolCalls));
 
-        using (ConsoleStyler.WithColor(ConsoleColor.Blue))
-            await Console.Error.WriteLineAsync("\n— Results —");
+        using (ConsoleStyler.WithColor(ConsoleColor.Cyan))
+            await Console.Error.WriteLineAsync("\n  ╭── 📊 EXECUTION TELEMETRY ──────────────────────────────────────────────╮");
+        
         var toolResultMessages = new List<ChatMessage>();
-        bool fileModified = false;
-        foreach (var toolCall in assistantToolCalls)
+        for (int i = 0; i < assistantToolCalls.Count; i++)
         {
+            var toolCall = assistantToolCalls[i];
             var result = await ResponseHandler.ProcessSingleToolCallAsync(toolCall, cancellationToken);
             if (result != null)
             {
                 toolResultMessages.Add(result);
-                LogToolResult(toolCall, result);
-            }
-
-            if (BuildVerifier.IsFileModifyingFunction(toolCall.FunctionName)
-                && result != null
-                && !ContextManager.ExtractText(result.Content).StartsWith("Error:"))
-            {
-                fileModified = true;
+                LogToolResult(toolCall, result, i);
             }
         }
+        await Console.Error.WriteLineAsync("  ╰────────────────────────────────────────────────────────────────────────╯");
 
         messages.AddRange(toolResultMessages);
-
-        if (fileModified && Configuration.GetAutoVerify() && !cancellationToken.IsCancellationRequested)
-        {
-            if (BuildVerifier.ResolveVerifyCommand() != null)
-            {
-                using (ConsoleStyler.WithColor(ConsoleColor.Blue))
-                    await Console.Error.WriteLineAsync("\n— Build Verification —");
-                var verifyMessage = await BuildVerifier.RunAsync(cancellationToken);
-                messages.Add(verifyMessage);
-                LogBuildVerification(verifyMessage);
-            }
-            else
-            {
-                using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
-                    await Console.Error.WriteLineAsync("  Build verification skipped: no supported build system detected (set VERIFY_COMMAND to enable, AUTO_VERIFY=false to disable).");
-            }
-        }
 
         return await ContextManager.TruncateMessagesAsync(messages, GetMessageBudget(contextWindowSize), cancellationToken);
     }
 
-    private static void LogBuildVerification(ChatMessage message)
-    {
-        if (message is not UserChatMessage userMsg)
-            return;
-
-        string content = ContextManager.ExtractText(userMsg.Content);
-        bool succeeded = content.Contains("Build succeeded");
-        string symbol = succeeded ? "✓" : "✗";
-        using (ConsoleStyler.WithColor(succeeded ? ConsoleColor.Green : ConsoleColor.Red))
-            Console.Error.WriteLine($"  {symbol} Auto-verify: {(succeeded ? "build passed" : "build failed")}");
-    }
-
-    private static void LogToolResult(ChatToolCall toolCall, ChatMessage result)
+    private static void LogToolResult(ChatToolCall toolCall, ChatMessage result, int streamIndex)
     {
         if (result is not ToolChatMessage toolMsg)
             return;
 
         string content = ContextManager.ExtractText(toolMsg.Content);
         bool isError = content.StartsWith("Error:");
-        string symbol = isError ? "✗" : "✓";
         string? primaryArg = ExtractPrimaryArg(toolCall.FunctionName, toolCall.FunctionArguments?.ToString() ?? "");
+        string fullArgs = toolCall.FunctionArguments?.ToString() ?? "";
 
-        if (!isError)
+        string argsDisplay = !string.IsNullOrEmpty(primaryArg) ? primaryArg : "(no args)";
+        string resultSummary = $"{ContextManager.EstimateTokens(content):N0} tokens";
+
+        UiStyler2026.RenderToolExecutionDetail(toolCall.FunctionName, argsDisplay, resultSummary, isError, content);
+
+        AppUi.Send("tool:end", new
         {
-            string tokensStr = $"{ContextManager.EstimateTokens(content):N0}";
-            string argPart = !string.IsNullOrEmpty(primaryArg) ? $" — {TruncateForDisplay(primaryArg, 80)}" : "";
-            using (ConsoleStyler.WithColor(ConsoleColor.Green))
-                Console.Error.Write($"  {symbol} ");
-            using (ConsoleStyler.WithColor(ConsoleColor.Yellow))
-                Console.Error.Write(toolCall.FunctionName);
-            using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
-                Console.Error.WriteLine($" ({tokensStr} tok){argPart}");
-        }
-        else
+            id = $"call-{streamIndex}",
+            name = toolCall.FunctionName,
+            args = fullArgs,
+            result = content,
+            ok = !isError,
+            isDiff = IsDiffContent(content),
+            tokens = ContextManager.EstimateTokens(content)
+        });
+
+        if (toolCall.FunctionName == ToolHandler.WriteFunctionName ||
+            toolCall.FunctionName == ToolHandler.EditFunctionName ||
+            toolCall.FunctionName == ToolHandler.ApplyPatchFunctionName ||
+            toolCall.FunctionName == ToolHandler.DiffFunctionName)
         {
-            using (ConsoleStyler.WithColor(ConsoleColor.Red))
-                Console.Error.WriteLine($"  {symbol} {toolCall.FunctionName} → {TruncateForDisplay(content, 80)}");
+            AppUi.PublishChanges();
         }
+    }
+
+    internal static bool IsDiffContent(string content)
+    {
+        if (string.IsNullOrEmpty(content))
+            return false;
+        return content.Contains("diff --git", StringComparison.OrdinalIgnoreCase)
+            || (content.Contains("@@", StringComparison.Ordinal) && content.Contains("+++", StringComparison.Ordinal));
     }
 
     private static string TruncateForDisplay(string text, int maxLen)
@@ -554,18 +554,7 @@ public static class ChatOrchestrator
         return text[..maxLen] + "…";
     }
 
-    // Gemini 3.x thinking models attach an opaque thought_signature to each tool call
-    // (serialized as tool_calls[].extra_content.google.thought_signature in the OpenAI-compat
-    // layer). The signature must be echoed back on the next request or Gemini rejects the
-    // message history with HTTP 400. The OpenAI SDK preserves unknown fields in JsonPatch;
-    // we lift the raw extra_content JSON from the streaming update and re-attach it to the
-    // rebuilt ChatToolCall so it is replayed verbatim.
-    // Gemini 3.x thinking models attach an opaque thought_signature to each tool call
-    // (tool_calls[].extra_content.google.thought_signature in the OpenAI-compat layer) and
-    // require it to be echoed back, or they reject the history with HTTP 400. The SDK keeps
-    // unknown fields in JsonPatch; lift the raw extra_content JSON from the streaming update
-    // and re-attach it to the rebuilt ChatToolCall so it is replayed verbatim.
-#pragma warning disable SCME0001 // Type is for evaluation purposes only and is subject to change or removal in future updates.
+#pragma warning disable SCME0001
     private static BinaryData? GetToolCallExtraContent(StreamingChatToolCallUpdate toolUpdate)
     {
         return toolUpdate.Patch.Contains("$.extra_content"u8)
@@ -582,9 +571,10 @@ public static class ChatOrchestrator
 
     private static async Task DisplayErrorAsync(string message)
     {
+        AppUi.Send("error", new { message });
         await Console.Out.WriteLineAsync();
         using (ConsoleStyler.WithColor(ConsoleColor.Red))
-            await Console.Error.WriteLineAsync(message);
+            await Console.Error.WriteLineAsync($"  ❌ [NEURAL ERROR] {message}");
     }
 
     private static string FormatApiError(ClientResultException ex)
@@ -643,15 +633,9 @@ public static class ChatOrchestrator
     }
 
     private const int MaxSkippedEditNudges = 2;
-
     private const int MaxStallInterventions = 3;
-
     private const int MaxDecisionTurns = 12;
 
-    // Only nudge when the model's previous turn was text-only. If it already
-    // executed tool calls, a fenced before/after block in the summary is a
-    // legitimate diff display — not a skipped edit — and nudging it would put
-    // the model in an unbreakable loop.
     private static bool PreviousTurnHadToolCalls(List<ChatMessage> messages)
     {
         for (int i = messages.Count - 1; i >= 0; i--)
@@ -721,24 +705,8 @@ public class ToolCallAccumulator
     public bool ArgsLogged { get; set; }
 }
 
-/// <summary>
-/// Detects degenerate loops where the model issues the same tool call over
-/// and over. Detection is result-aware: a call is only a stall when BOTH the
-/// call (function + its distinguishing arguments) AND the result it produces
-/// repeat — a repeated call that returns different content (e.g. re-reading a
-/// file that changed, or a retry that now succeeds) is progress, not a stall.
-/// Detection is window-based: a call is flagged when the same fingerprint
-/// appears at least maxRepeats times within the last windowSize calls, which
-/// also catches loops that alternate between two or three calls.
-/// </summary>
 internal static class StallDetector
 {
-    /// <summary>
-    /// Fingerprint of the most recent assistant tool call: the function name,
-    /// its distinguishing arguments (file_path, line range, search scope, edit
-    /// target), and a hash of the result that call produced. Returns null when
-    /// the last assistant message has no tool calls.
-    /// </summary>
     internal static string? Fingerprint(List<ChatMessage> messages)
     {
         for (int i = messages.Count - 1; i >= 0; i--)
@@ -768,21 +736,21 @@ internal static class StallDetector
 
         if (functionName == ToolHandler.GrepFunctionName)
         {
-            string? include = ExtractStringProperty(args, "include");
-            string? path = ExtractStringProperty(args, "path");
+            string? include = ChatOrchestrator.ExtractStringProperty(args, "include");
+            string? path = ChatOrchestrator.ExtractStringProperty(args, "path");
             return $"Grep|{primary}|{include}|{path}";
         }
 
         if (functionName == ToolHandler.EditFunctionName)
         {
-            string? oldString = ExtractStringProperty(args, "old_string");
+            string? oldString = ChatOrchestrator.ExtractStringProperty(args, "old_string");
             string oldKey = oldString == null ? "?" : HashText(oldString);
             return $"Edit|{primary}|{oldKey}";
         }
 
         if (functionName == ToolHandler.ApplyPatchFunctionName)
         {
-            string? oldString = ExtractStringProperty(args, "old_string");
+            string? oldString = ChatOrchestrator.ExtractStringProperty(args, "old_string");
             string oldKey = oldString == null ? "?" : HashText(oldString);
             return $"ApplyPatch|{primary}|{oldKey}";
         }
@@ -792,15 +760,11 @@ internal static class StallDetector
 
     private static string ReadRange(string args)
     {
-        string? start = ExtractStringProperty(args, "start_line");
-        string? end = ExtractStringProperty(args, "end_line");
+        string? start = ChatOrchestrator.ExtractStringProperty(args, "start_line");
+        string? end = ChatOrchestrator.ExtractStringProperty(args, "end_line");
         return $"{(string.IsNullOrEmpty(start) ? "?" : start)}-{(string.IsNullOrEmpty(end) ? "?" : end)}";
     }
 
-    /// <summary>
-    /// Hash of the content of the first tool result that follows the assistant
-    /// message at index toolCallIndex, or "?" when no result is present.
-    /// </summary>
     private static string FindResultKey(List<ChatMessage> messages, int toolCallIndex)
     {
         for (int i = toolCallIndex + 1; i < messages.Count; i++)
@@ -816,12 +780,6 @@ internal static class StallDetector
         return "?";
     }
 
-    private static string? ExtractStringProperty(string json, string key)
-    {
-        var match = System.Text.RegularExpressions.Regex.Match(json, $@"""{key}"":\s*""((?:[^""\\]|\\.)*)""");
-        return match.Success ? match.Groups[1].Value : null;
-    }
-
     private static string HashText(string text)
     {
         var bytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text));
@@ -829,9 +787,6 @@ internal static class StallDetector
     }
 }
 
-/// <summary>
-/// Tracks the recent tool-call fingerprints within a sliding window.
-/// </summary>
 internal sealed class StallTracker
 {
     internal const int DefaultWindowSize = 5;
@@ -847,13 +802,6 @@ internal sealed class StallTracker
         _maxRepeats = maxRepeats;
     }
 
-    /// <summary>
-    /// Feeds the fingerprint of the most recent assistant tool call into the
-    /// tracker. Returns true when the same fingerprint has appeared at least
-    /// maxRepeats times within the last windowSize calls; the window is then
-    /// cleared so each stall triggers exactly one intervention. A text-only
-    /// turn (null fingerprint) clears the window.
-    /// </summary>
     public bool Observe(string? fingerprint)
     {
         if (fingerprint == null)

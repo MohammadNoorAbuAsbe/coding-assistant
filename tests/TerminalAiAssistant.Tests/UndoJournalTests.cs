@@ -150,6 +150,35 @@ public class UndoJournalTests
     }
 
     [Fact]
+    public async Task UndoAt_RevertsSpecificEntry_NewestFirstIndexing()
+    {
+        using var ws = new TempWorkspace();
+        ws.WriteFile("a.txt", "a1");
+        ws.WriteFile("b.txt", "b1");
+
+        await RunToolAsync(ToolHandler.WriteFunctionName, new { file_path = "a.txt", content = "a2" });
+        await RunToolAsync(ToolHandler.WriteFunctionName, new { file_path = "b.txt", content = "b2" });
+
+        var entry = UndoJournal.UndoAt(1);
+        Assert.NotNull(entry);
+        Assert.Equal(Path.Combine(ws.Root, "a.txt"), entry!.FullPath);
+        Assert.Equal("a1", ws.ReadFile("a.txt"));
+        Assert.Equal("b2", ws.ReadFile("b.txt"));
+
+        Assert.Equal(1, UndoJournal.List().Count);
+    }
+
+    [Fact]
+    public void UndoAt_OutOfRange_ReturnsNullAndKeepsJournal()
+    {
+        using var ws = new TempWorkspace();
+        UndoJournal.Record(Path.Combine(ws.Root, "a.txt"), "a1", existedBefore: true, "Write");
+
+        Assert.Null(UndoJournal.UndoAt(5));
+        Assert.Single(UndoJournal.List());
+    }
+
+    [Fact]
     public void List_ReturnsEntriesNewestFirst()
     {
         using var ws = new TempWorkspace();

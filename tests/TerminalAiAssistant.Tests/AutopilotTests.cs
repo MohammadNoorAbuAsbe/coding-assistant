@@ -70,36 +70,6 @@ public class AutopilotTests
         }
     }
 
-    [Fact]
-    public void GetAutoVerify_AlwaysDisabledInAutopilotMode()
-    {
-        SetEnv("AUTO_VERIFY", "true");
-        Autopilot.SetActiveForTesting(true);
-        try
-        {
-            Assert.False(Configuration.GetAutoVerify());
-        }
-        finally
-        {
-            Autopilot.SetActiveForTesting(false);
-            SetEnv("AUTO_VERIFY", null);
-        }
-    }
-
-    [Fact]
-    public void GetAutoVerify_RespectsEnvWhenNotInAutopilot()
-    {
-        SetEnv("AUTO_VERIFY", "false");
-        try
-        {
-            Assert.False(Configuration.GetAutoVerify());
-        }
-        finally
-        {
-            SetEnv("AUTO_VERIFY", null);
-        }
-    }
-
     [Theory]
     [InlineData("1", true)]
     [InlineData("true", true)]

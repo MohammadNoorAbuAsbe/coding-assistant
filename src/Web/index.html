@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Coding Assistant</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div id="app">
+
+  <!-- ── Left sidebar ─────────────────────────────────────────── -->
+  <aside id="sidebar">
+    <div class="side-head">
+      <div id="workspace-label" class="workspace" title="">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
+        <span id="workspace-name">—</span>
+        <button id="btn-folder" class="icon-btn subtle" title="Change folder (Ctrl+O)">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" opacity=".45"/><path d="M12 10v4m-2-2h4"/></svg>
+        </button>
+      </div>
+      <div class="side-tabs" role="tablist">
+        <button class="side-tab active" data-panel="files" title="Files">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
+        </button>
+        <button class="side-tab" data-panel="changes" title="Changes">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+          <span id="changes-badge" class="badge hidden">0</span>
+        </button>
+        <button class="side-tab" data-panel="todos" title="Tasks">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M3 6l1 1 2-2M3 12l1 1 2-2M3 18l1 1 2-2"/></svg>
+        </button>
+      </div>
+      <button id="btn-collapse-side" class="icon-btn subtle" title="Hide sidebar (Ctrl+B)">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+    </div>
+
+    <div id="panel-files" class="side-panel active">
+      <div class="panel-toolbar">
+        <input id="file-filter" class="mini-input" type="text" placeholder="Filter files…" spellcheck="false" />
+        <button id="btn-refresh-files" class="icon-btn subtle" title="Refresh">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14-5m2 5a8 8 0 0 1-14 5m0-5H4l-2 0M20 12h-2"/></svg>
+        </button>
+      </div>
+      <div id="file-tree" class="tree"></div>
+    </div>
+
+    <div id="panel-changes" class="side-panel">
+      <div id="changes-list" class="changes-list">
+        <div class="empty-hint">File changes made by the agent will appear here.</div>
+      </div>
+    </div>
+
+    <div id="panel-todos" class="side-panel">
+      <div id="todos-progress" class="todos-progress hidden">
+        <div class="todos-bar"><div id="todos-bar-fill"></div></div>
+        <span id="todos-count"></span>
+      </div>
+      <div id="todos-list" class="todos-list">
+        <div class="empty-hint">The agent's task list will appear here.</div>
+      </div>
+    </div>
+  </aside>
+  <div id="sidebar-resizer"></div>
+
+  <!-- ── Main column ──────────────────────────────────────────── -->
+  <main id="main">
+    <div id="messages" class="messages"></div>
+
+    <div id="jump-bottom" class="jump-bottom hidden">
+      <svg class="ic" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+    </div>
+
+    <!-- Composer -->
+    <div id="composer-wrap">
+      <div id="slash-menu" class="slash-menu hidden"></div>
+      <div id="composer" class="composer">
+        <textarea id="input" rows="1" placeholder="Ask anything about this project…" spellcheck="false"></textarea>
+        <div class="composer-bar">
+          <div class="composer-left">
+            <button id="btn-slash" class="chip" title="Slash commands">/</button>
+            <button id="btn-model" class="chip" title="Switch provider / model">
+              <span id="model-chip-name">—</span>
+            </button>
+          </div>
+          <div class="composer-right">
+            <span id="composer-hint" class="composer-hint">Enter to send · Shift+Enter for newline</span>
+            <button id="btn-send" class="send-btn" title="Send (Enter)">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M3 11l18-8-8 18-2.5-7.5L3 11z"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Status bar -->
+    <footer id="statusbar">
+      <div class="sb-left">
+        <span id="sb-provider" class="sb-item">—</span>
+        <span class="sb-sep">·</span>
+        <span id="sb-model" class="sb-item">—</span>
+        <span class="sb-sep">·</span>
+        <span id="sb-context" class="sb-item">—</span>
+      </div>
+      <div class="sb-center">
+        <span id="sb-status" class="sb-status"></span>
+        <span id="sb-autopilot" class="autopilot-pill hidden">AUTOPILOT</span>
+      </div>
+      <div class="sb-right">
+        <span id="sb-tokens" class="sb-item muted">in 0 · out 0</span>
+        <button id="btn-theme" class="icon-btn subtle" title="Toggle theme">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9c0-.5-.4-1-1-.7a5 5 0 0 1-6-6c.3-.6-.2-1-.8-1a9 9 0 0 0-1.2-1.3z"/></svg>
+        </button>
+        <button id="btn-settings" class="icon-btn subtle" title="Settings (Ctrl+,)">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm8.5 4a6.5 6.5 0 0 0-.1-1l2-1.5-2-3.5-2.4 1a6.6 6.6 0 0 0-1.7-1L15.8 3h-4l-.5 2.5a6.6 6.6 0 0 0-1.7 1l-2.4-1-2 3.5 2 1.5a6.5 6.5 0 0 0 0 2l-2 1.5 2 3.5 2.4-1a6.6 6.6 0 0 0 1.7 1l.5 2.5h4l.5-2.5a6.6 6.6 0 0 0 1.7-1l2.4 1 2-3.5-2-1.5a6.5 6.5 0 0 0 .1-1z"/></svg>
+        </button>
+      </div>
+    </footer>
+  </main>
+
+  <!-- ── File viewer drawer ───────────────────────────────────── -->
+  <aside id="viewer" class="viewer hidden">
+    <div class="viewer-head">
+      <span id="viewer-path" class="viewer-path"></span>
+      <div class="viewer-actions">
+        <button id="btn-viewer-copy" class="icon-btn subtle" title="Copy file">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M8 8h12v12H8z"/><path d="M4 16V4h12"/></svg>
+        </button>
+        <button id="btn-viewer-external" class="icon-btn subtle" title="Reveal in Explorer">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M20 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h5"/></svg>
+        </button>
+        <button id="btn-viewer-close" class="icon-btn subtle" title="Close">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+    </div>
+    <div id="viewer-lang" class="viewer-lang"></div>
+    <div id="viewer-content" class="viewer-content"></div>
+  </aside>
+</div>
+
+<!-- ── Command palette ────────────────────────────────────────── -->
+<div id="palette-overlay" class="overlay hidden">
+  <div id="palette" class="palette">
+    <div class="palette-search">
+      <svg class="ic" viewBox="0 0 24 24"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zm10 16l-5.5-5.5"/></svg>
+      <input id="palette-input" type="text" placeholder="Type a command…" spellcheck="false" autocomplete="off" />
+      <kbd>Esc</kbd>
+    </div>
+    <div id="palette-results" class="palette-results"></div>
+  </div>
+</div>
+
+<!-- ── Settings drawer ────────────────────────────────────────── -->
+<div id="settings-overlay" class="overlay hidden">
+  <div id="settings" class="settings">
+    <div class="settings-head">
+      <h2>Settings</h2>
+      <button id="btn-settings-close" class="icon-btn subtle">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="settings-body">
+      <section>
+        <h3>Provider</h3>
+        <div id="settings-providers" class="provider-list"></div>
+      </section>
+      <section id="settings-models-section" class="hidden">
+        <h3>Model</h3>
+        <div id="settings-models" class="model-list"></div>
+      </section>
+      <section>
+        <h3>Appearance</h3>
+        <div class="setting-row">
+          <span>Theme</span>
+          <div class="seg">
+            <button data-theme="dark" class="seg-btn">Dark</button>
+            <button data-theme="light" class="seg-btn">Light</button>
+          </div>
+        </div>
+        <div class="setting-row">
+          <span>Font size</span>
+          <div class="seg">
+            <button data-font="13" class="seg-btn">S</button>
+            <button data-font="14" class="seg-btn">M</button>
+            <button data-font="15" class="seg-btn">L</button>
+            <button data-font="16" class="seg-btn">XL</button>
+          </div>
+        </div>
+      </section>
+      <section>
+        <h3>Workspace</h3>
+        <div id="settings-workspace" class="setting-text">—</div>
+        <button id="btn-settings-folder" class="btn ghost">Change folder…</button>
+      </section>
+      <section>
+        <h3>About</h3>
+        <div class="setting-text" id="settings-about">Coding Assistant — an AI coding agent for your projects.</div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<!-- ── Question modal ─────────────────────────────────────────── -->
+<div id="question-overlay" class="overlay hidden">
+  <div id="question" class="question-modal">
+    <div class="question-head">
+      <svg class="ic" viewBox="0 0 24 24"><path d="M12 8a3 3 0 1 0 0 6 3 3 0 0 0 0-6zm0-4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z"/></svg>
+      <span id="question-title">The agent is asking</span>
+    </div>
+    <p id="question-text" class="question-text"></p>
+    <div id="question-options" class="question-options"></div>
+    <div id="question-custom" class="question-custom hidden">
+      <input id="question-input" type="text" placeholder="Type your own answer…" spellcheck="false" />
+      <button id="question-submit" class="btn primary">Submit</button>
+    </div>
+  </div>
+</div>
+
+<div id="toasts" class="toasts"></div>
+
+<script src="vendor/marked.min.js"></script>
+<script src="vendor/highlight.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

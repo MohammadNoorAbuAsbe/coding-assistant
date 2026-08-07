@@ -4,130 +4,109 @@ namespace TerminalAiAssistant;
 
 public static class UiStyler
 {
+    private static readonly string[] CyberBanner = [
+        "    ╔════════════════════════════════════════════════════════════════════════════╗",
+        "    ║                                                                            ║",
+        "    ║   ████████╗███████╗██████╗ ███╗   ███╗██╗███╗   ██╗ █████╗ ██╗             ║",
+        "    ║   ╚══██╔══╝██╔════╝██╔══██╗████╗ ████║██║████╗  ██║██╔══██╗██║             ║",
+        "    ║      ██║   █████╗  ██████╔╝██╔████╔██║██║██╔██╗ ██║███████║██║             ║",
+        "    ║      ██║   ██╔══╝  ██╔══██╗██║╚██╔╝██║██║██║╚██╗██║██╔══██║██║             ║",
+        "    ║      ██║   ███████╗██║  ██║██║ ╚═╝ ██║██║██║ ╚████║██║  ██║███████╗        ║",
+        "    ║      ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝        ║",
+        "    ║                                                                            ║",
+        "    ╚════════════════════════════════════════════════════════════════════════════╝"
+    ];
+
     public static void ShowBanner()
     {
         Console.WriteLine();
-        using (ConsoleStyler.WithColor(ConsoleColor.Cyan))
+        int colorIdx = 0;
+        ConsoleColor[] gradient = [ThemeManager.Primary, ThemeManager.Secondary, ThemeManager.Accent, ThemeManager.Primary];
+        foreach (var line in CyberBanner)
         {
-            Console.WriteLine("    ████████╗███████╗██████╗ ███╗   ███╗██╗███╗   ██╗ █████╗ ██╗");
-            Console.WriteLine("    ╚══██╔══╝██╔════╝██╔══██╗████╗ ████║██║████╗  ██║██╔══██╗██║");
-            Console.WriteLine("       ██║   █████╗  ██████╔╝██╔████╔██║██║██╔██╗ ██║███████║██║");
-            Console.WriteLine("       ██║   ██╔══╝  ██╔══██╗██║╚██╔╝██║██║██║╚██╗██║██╔══██║██║");
-            Console.WriteLine("       ██║   ███████╗██║  ██║██║ ╚═╝ ██║██║██║ ╚████║██║  ██║███████╗");
-            Console.WriteLine("       ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝");
+            using (ConsoleStyler.WithColor(gradient[colorIdx % gradient.Length]))
+            {
+                Console.WriteLine(line);
+            }
+            colorIdx++;
         }
-        using (ConsoleStyler.WithColor(ConsoleColor.DarkCyan))
+        Console.WriteLine();
+        using (ConsoleStyler.WithColor(ThemeManager.Accent))
         {
-            Console.WriteLine("         🌟 A I   C O D I N G   A S S I S T A N T   &   A G E N T  🌟");
+            Console.WriteLine($"        🔮   N E X T - G E N   A I   C O D I N G   E CＯＳＹＳＴＥМ   [{ThemeManager.ThemeName.ToUpper()}]   🔮");
         }
-        using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
+        using (ConsoleStyler.WithColor(ThemeManager.MutedText))
         {
-            Console.WriteLine("         ──────────────────────────────────────────────────────");
+            Console.WriteLine("        ──────────────────────────────────────────────────────────────────────────");
         }
         Console.WriteLine();
     }
 
     public static void ShowStatusCard(string provider, string model, string workspace, string contextInfo)
     {
-        using (ConsoleStyler.WithColor(ConsoleColor.Cyan))
+        using (ConsoleStyler.WithColor(ThemeManager.Primary))
         {
-            Console.WriteLine("  ╭─────────────────────────────────────────────────────────────────╮");
-            Console.WriteLine("  │  🚀 ACTIVE SESSION STATUS                                       │");
-            Console.WriteLine("  ├─────────────────────────────────────────────────────────────────┤");
-        }
-        using (ConsoleStyler.WithColor(ConsoleColor.DarkCyan))
-        {
-            Console.Write("  │  ");
-        }
-        using (ConsoleStyler.WithColor(ConsoleColor.Gray))
-        {
-            Console.Write("Provider  : ");
-        }
-        using (ConsoleStyler.WithColor(ConsoleColor.Green))
-        {
-            Console.Write($"{provider,-52}");
-        }
-        using (ConsoleStyler.WithColor(ConsoleColor.Cyan))
-        {
-            Console.WriteLine("│");
+            Console.WriteLine("  ╔════════════════════════════════════════════════════════════════════════════╗");
+            Console.WriteLine("  ║  🚀 CYBERPUNK NEURAL ENVIRONMENT HUD                                       ║");
+            Console.WriteLine("  ╠════════════════════════════════════════════════════════════════════════════╣");
         }
 
-        using (ConsoleStyler.WithColor(ConsoleColor.DarkCyan))
-        {
-            Console.Write("  │  ");
-        }
-        using (ConsoleStyler.WithColor(ConsoleColor.Gray))
-        {
-            Console.Write("Model     : ");
-        }
-        using (ConsoleStyler.WithColor(ConsoleColor.Yellow))
-        {
-            Console.Write($"{model,-52}");
-        }
-        using (ConsoleStyler.WithColor(ConsoleColor.Cyan))
-        {
-            Console.WriteLine("│");
-        }
+        PrintStatusRow("Provider", provider, ThemeManager.Accent);
+        PrintStatusRow("Model", model, ThemeManager.Secondary);
+        PrintStatusRow("Context", contextInfo, ThemeManager.Primary);
+        PrintStatusRow("Workspace", Truncate(workspace, 62), ConsoleColor.White);
+        PrintStatusRow("Theme", ThemeManager.ThemeName + " (/theme to cycle)", ConsoleColor.Yellow);
 
-        using (ConsoleStyler.WithColor(ConsoleColor.DarkCyan))
+        using (ConsoleStyler.WithColor(ThemeManager.Primary))
         {
-            Console.Write("  │  ");
-        }
-        using (ConsoleStyler.WithColor(ConsoleColor.Gray))
-        {
-            Console.Write("Context   : ");
-        }
-        using (ConsoleStyler.WithColor(ConsoleColor.Magenta))
-        {
-            Console.Write($"{contextInfo,-52}");
-        }
-        using (ConsoleStyler.WithColor(ConsoleColor.Cyan))
-        {
-            Console.WriteLine("│");
-        }
-
-        using (ConsoleStyler.WithColor(ConsoleColor.DarkCyan))
-        {
-            Console.Write("  │  ");
-        }
-        using (ConsoleStyler.WithColor(ConsoleColor.Gray))
-        {
-            Console.Write("Workspace : ");
-        }
-        using (ConsoleStyler.WithColor(ConsoleColor.White))
-        {
-            Console.Write($"{Truncate(workspace, 52),-52}");
-        }
-        using (ConsoleStyler.WithColor(ConsoleColor.Cyan))
-        {
-            Console.WriteLine("│");
-            Console.WriteLine("  ╰─────────────────────────────────────────────────────────────────╯");
+            Console.WriteLine("  ╚════════════════════════════════════════════════════════════════════════════╝");
         }
         Console.WriteLine();
     }
 
+    private static void PrintStatusRow(string label, string value, ConsoleColor valueColor)
+    {
+        using (ConsoleStyler.WithColor(ThemeManager.BorderColor))
+        {
+            Console.Write("  ║  ");
+        }
+        using (ConsoleStyler.WithColor(ConsoleColor.Gray))
+        {
+            Console.Write($"{label,-11}: ");
+        }
+        using (ConsoleStyler.WithColor(valueColor))
+        {
+            Console.Write($"{value,-62}");
+        }
+        using (ConsoleStyler.WithColor(ThemeManager.Primary))
+        {
+            Console.WriteLine("║");
+        }
+    }
+
     public static void ShowStatusBar(string statusText)
     {
-        using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
+        using (ConsoleStyler.WithColor(ThemeManager.MutedText))
         {
-            Console.WriteLine($"  [ STATUS: {statusText} ]");
+            Console.WriteLine($"  ⚡ [ SYSTEM STATUS: {statusText} ]");
         }
     }
 
     public static void ShowHelp()
     {
-        using (ConsoleStyler.WithColor(ConsoleColor.Cyan))
+        using (ConsoleStyler.WithColor(ThemeManager.Primary))
         {
-            Console.WriteLine("  ╔═ 💡 Quick Commands ═════════════════════════════════════════════╗");
-            Console.WriteLine("  ║                                                                 ║");
-            Console.WriteLine("  ║   /exit or /quit   • Exit the assistant session                 ║");
-            Console.WriteLine("  ║   /new or /reset   • Reset conversation session and history     ║");
-            Console.WriteLine("  ║   /autopilot       • Launch fully autonomous mode               ║");
-            Console.WriteLine("  ║   /undo            • Undo the last file modification            ║");
-            Console.WriteLine("  ║   /history         • View session file modification history     ║");
-            Console.WriteLine("  ║   /help            • Show this quick command guide              ║");
-            Console.WriteLine("  ║                                                                 ║");
-            Console.WriteLine("  ╚═════════════════════════════════════════════════════════════════╝");
+            Console.WriteLine("  ╔══ 💡 NEURAL COMMAND MATRIX & SHORTCUTS ════════════════════════════════════╗");
+            Console.WriteLine("  ║                                                                            ║");
+            Console.WriteLine("  ║   /exit or /quit   • Terminate secure neural link                          ║");
+            Console.WriteLine("  ║   /new or /reset   • Purge context history & re-initialize core            ║");
+            Console.WriteLine("  ║   /autopilot       • Engage autonomous self-evolution swarm mode           ║");
+            Console.WriteLine("  ║   /theme           • Cycle gorgeous UI color themes & palettes             ║");
+            Console.WriteLine("  ║   /undo            • Rollback latest quantum file state modification       ║");
+            Console.WriteLine("  ║   /history         • Inspect telemetry ledger of file modifications        ║");
+            Console.WriteLine("  ║   /help            • Summon neural command matrix                          ║");
+            Console.WriteLine("  ║                                                                            ║");
+            Console.WriteLine("  ╚════════════════════════════════════════════════════════════════════════════╝");
             Console.WriteLine();
         }
     }

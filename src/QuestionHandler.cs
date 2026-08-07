@@ -6,13 +6,13 @@ namespace TerminalAiAssistant;
 
 internal static class QuestionHandler
 {
-    internal static ToolChatMessage? ProcessQuestionCall(ChatToolCall toolCall)
+    internal static async Task<ToolChatMessage?> ProcessQuestionCallAsync(ChatToolCall toolCall, CancellationToken cancellationToken)
     {
-        return ResponseHandler.ExecuteToolCall<ToolHandler.QuestionCall>(
+        return await ResponseHandler.ExecuteToolCallAsync<ToolHandler.QuestionCall>(
             toolCall,
             "Expected format: {\"question\": \"...\", \"options\": [...]}",
             "asking question",
-            args =>
+            async args =>
             {
                 if (args.question == null)
                 {
@@ -29,7 +29,9 @@ internal static class QuestionHandler
                     return new ToolChatMessage(toolCall.Id, BuildAutoAnswer(args.question, args.options));
                 }
 
-                string answer = AskUser(args.question, args.header, args.options, args.allow_custom == "true");
+                string answer = await AppUi.AskQuestionAsync(
+                    toolCall.Id, args.question, args.header, args.options,
+                    args.allow_custom == "true", cancellationToken);
 
                 return new ToolChatMessage(toolCall.Id, answer);
             });
@@ -52,7 +54,7 @@ internal static class QuestionHandler
         return sb.ToString();
     }
 
-    private static string AskUser(string question, string? header, List<ToolHandler.QuestionOption> options, bool allowCustom)
+    internal static async Task<string> AskUserAsync(string question, string? header, List<ToolHandler.QuestionOption> options, bool allowCustom, CancellationToken cancellationToken = default)
     {
         Console.Error.WriteLine();
         using (ConsoleStyler.WithColor(ConsoleColor.Magenta))
@@ -83,7 +85,7 @@ internal static class QuestionHandler
 
         Console.Error.Write("Choice (1-{0}{1}): ", options.Count, allowCustom ? $"/{options.Count + 1}" : "");
 
-        string? input = Console.ReadLine();
+        string? input = await Console.In.ReadLineAsync(cancellationToken);
         Console.Error.WriteLine();
 
         if (string.IsNullOrWhiteSpace(input))
@@ -100,7 +102,7 @@ internal static class QuestionHandler
         if (allowCustom && int.TryParse(input.Trim(), out int customChoice) && customChoice == options.Count + 1)
         {
             Console.Error.Write("Custom answer: ");
-            string? customAnswer = Console.ReadLine();
+            string? customAnswer = await Console.In.ReadLineAsync(cancellationToken);
             Console.Error.WriteLine();
             return $"User provided custom answer: {customAnswer ?? "(empty)"}";
         }

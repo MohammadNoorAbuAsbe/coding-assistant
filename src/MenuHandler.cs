@@ -9,10 +9,22 @@ public static class MenuHandler
         var list = providers.Values.ToList();
         var keys = providers.Keys.ToList();
 
-        ConsoleStyler.WriteLine("\nSelect provider:", ConsoleColor.Cyan);
+        Console.WriteLine();
+        using (ConsoleStyler.WithColor(ThemeManager.Primary))
+        {
+            Console.WriteLine("  ╔══ 🤖 SELECT NEURAL LLM PROVIDER ═════════════════════════════════════════╗");
+            Console.WriteLine("  ║   Choose your neural intelligence backend:                               ║");
+            Console.WriteLine("  ╠══════════════════════════════════════════════════════════════════════════╣");
+        }
         for (int i = 0; i < list.Count; i++)
         {
-            Console.WriteLine($"  {i + 1}. {list[i].DisplayName}");
+            using (ConsoleStyler.WithColor(ThemeManager.BorderColor)) { Console.Write("  ║  "); }
+            using (ConsoleStyler.WithColor(ThemeManager.Accent)) { Console.Write($"[{i + 1}] "); }
+            using (ConsoleStyler.WithColor(ConsoleColor.White)) { Console.WriteLine($"{list[i].DisplayName,-66} ║"); }
+        }
+        using (ConsoleStyler.WithColor(ThemeManager.Primary))
+        {
+            Console.WriteLine("  ╚══════════════════════════════════════════════════════════════════════════╝");
         }
 
         var choice = GetChoice(1, list.Count);
@@ -40,15 +52,34 @@ public static class MenuHandler
 
         if (models.Count == 1)
         {
-            Console.WriteLine($"\nModel: {models[0]}");
+            Console.WriteLine();
+            using (ConsoleStyler.WithColor(ThemeManager.MutedText))
+            {
+                Console.WriteLine($"  ⚡ [Neural Link] Model locked to: {models[0]}");
+            }
             return models[0];
         }
 
-        ConsoleStyler.WriteLine("\nSelect model:", ConsoleColor.Cyan);
+        Console.WriteLine();
+        using (ConsoleStyler.WithColor(ThemeManager.Primary))
+        {
+            Console.WriteLine("  ╔══ 🧠 SELECT NEURAL AI MODEL ═════════════════════════════════════════════╗");
+            Console.WriteLine("  ║   Select model architecture for optimal reasoning:                       ║");
+            Console.WriteLine("  ╠══════════════════════════════════════════════════════════════════════════╣");
+        }
         for (int i = 0; i < models.Count; i++)
         {
             var note = models[i] == config.DefaultModel ? " (default)" : "";
-            Console.WriteLine($"  {i + 1}. {models[i]}{note}");
+            using (ConsoleStyler.WithColor(ThemeManager.BorderColor)) { Console.Write("  ║  "); }
+            using (ConsoleStyler.WithColor(ThemeManager.Accent)) { Console.Write($"[{i + 1}] "); }
+            using (ConsoleStyler.WithColor(models[i] == config.DefaultModel ? ConsoleColor.Green : ConsoleColor.White))
+            {
+                Console.WriteLine($"{models[i] + note,-66} ║");
+            }
+        }
+        using (ConsoleStyler.WithColor(ThemeManager.Primary))
+        {
+            Console.WriteLine("  ╚══════════════════════════════════════════════════════════════════════════╝");
         }
 
         var choice = GetChoice(1, models.Count);
@@ -57,11 +88,21 @@ public static class MenuHandler
 
     public static string GetPrompt()
     {
-        ConsoleStyler.WriteLine("Enter your prompt (multi-line supported; blank line to submit):", ConsoleColor.DarkGray);
+        using (ConsoleStyler.WithColor(ThemeManager.MutedText))
+        {
+            Console.WriteLine("  ───────────────────────────────────────────────────────────────────────────");
+        }
+        using (ConsoleStyler.WithColor(ThemeManager.Primary))
+        {
+            Console.WriteLine("  💬 Enter neural prompt (multi-line supported; send blank line to transmit):");
+        }
         var lines = new List<string>();
         while (true)
         {
-            ConsoleStyler.Write("❯ ", ConsoleColor.Green);
+            using (ConsoleStyler.WithColor(ThemeManager.Secondary))
+            {
+                Console.Write("  ❯ ");
+            }
             var line = Console.ReadLine();
             if (line is null) break;
             if (lines.Count == 0 && string.IsNullOrWhiteSpace(line)) return "";
@@ -110,11 +151,17 @@ public static class MenuHandler
     {
         while (true)
         {
-            ConsoleStyler.Write($"Enter choice ({min}-{max}): ", ConsoleColor.Yellow);
+            using (ConsoleStyler.WithColor(ThemeManager.Accent))
+            {
+                Console.Write($"  Enter choice ({min}-{max}): ");
+            }
             var input = Console.ReadLine();
             if (int.TryParse(input, out int choice) && choice >= min && choice <= max)
                 return choice;
-            ConsoleStyler.WriteLine($"Invalid input. Please enter a number between {min} and {max}.", ConsoleColor.Red);
+            using (ConsoleStyler.WithColor(ConsoleColor.Red))
+            {
+                Console.WriteLine($"  Invalid selection. Please enter a number between {min} and {max}.");
+            }
         }
     }
 }

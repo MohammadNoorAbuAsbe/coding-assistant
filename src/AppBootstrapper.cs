@@ -40,6 +40,13 @@ public static class AppBootstrapper
             _cancelPressed = false;
         }
 
+        /// <summary>Programmatically cancels the current operation (used by the desktop UI).</summary>
+        public void Cancel()
+        {
+            _cancelPressed = true;
+            _cts.Cancel();
+        }
+
         public void RegisterCancelHandler()
         {
             Console.CancelKeyPress += (_, e) =>

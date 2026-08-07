@@ -29,6 +29,7 @@ public static class UndoJournal
             if (Entries.Count > limit)
                 Entries.RemoveRange(0, Entries.Count - limit);
         }
+        AppUi.PublishChanges();
     }
 
     /// <summary>
@@ -66,6 +67,34 @@ public static class UndoJournal
         {
             return Entries.Count > 0 ? Entries[^1] : null;
         }
+    }
+
+    /// <summary>
+    /// Reverts the entry at the given index (0 = most recent) and restores the
+    /// file to its before-image, mirroring <see cref="UndoLast"/>. Returns null
+    /// if the index is out of range.
+    /// </summary>
+    public static UndoEntry? UndoAt(int index)
+    {
+        UndoEntry? entry;
+        lock (Gate)
+        {
+            if (index < 0 || index >= Entries.Count)
+                return null;
+            entry = Entries[Entries.Count - 1 - index];
+            Entries.RemoveAt(Entries.Count - 1 - index);
+        }
+
+        if (entry.ExistedBefore)
+        {
+            File.WriteAllText(entry.FullPath, entry.BeforeContent ?? "");
+        }
+        else if (File.Exists(entry.FullPath))
+        {
+            File.Delete(entry.FullPath);
+        }
+
+        return entry;
     }
 
     /// <summary>
