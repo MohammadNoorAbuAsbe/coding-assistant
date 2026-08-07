@@ -60,7 +60,7 @@ Rules:
                     await Console.Error.WriteLineAsync($"\n================ Autopilot cycle {cycle} ================");
                 AppUi.Send("autopilot", new { active = true, cycle, message = $"Autopilot cycle {cycle}" });
 
-                int journalCount = UndoJournal.List().Count;
+                int journalCount = session.Undo.List().Count;
                 string prompt = forceChangeNextCycle
                     ? MissionPrompt + "\n\n" + AutopilotSuggestions.BuildNoChangeCarryover()
                     : MissionPrompt;
@@ -74,7 +74,7 @@ Rules:
                     break;
                 }
 
-                var changes = UndoJournal.List().Take(Math.Max(0, UndoJournal.List().Count - journalCount)).ToList();
+                var changes = session.Undo.List().Take(Math.Max(0, session.Undo.List().Count - journalCount)).ToList();
                 forceChangeNextCycle = changes.Count == 0;
                 if (changes.Count == 0)
                 {

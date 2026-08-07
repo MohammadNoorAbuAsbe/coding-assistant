@@ -102,10 +102,13 @@ public static class AppUi
         return await QuestionHandler.AskUserAsync(question, header, options.ToList(), allowCustom, cancellationToken);
     }
 
-    /// <summary>Publishes the current undo journal so the UI can render the Changes panel.</summary>
-    public static void PublishChanges()
+    /// <summary>Publishes the undo journal so the UI can render the Changes panel.
+    /// Falls back to the active run's journal (or the shared one) when no
+    /// journal is passed explicitly.</summary>
+    public static void PublishChanges(UndoJournal? journal = null)
     {
-        var entries = UndoJournal.List();
+        journal ??= SessionContext.Undo;
+        var entries = journal.List();
         var items = entries.Select((e, i) => new
         {
             index = i,

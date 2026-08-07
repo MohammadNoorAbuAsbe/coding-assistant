@@ -50,7 +50,7 @@ public class PatchEndToEndTests
     public async Task ApplyPatch_NeverReadFile_Refuses()
     {
         using var ws = new TempWorkspace();
-        FileStateJournal.Clear();
+        SessionContext.FileState.Clear();
         System.IO.File.WriteAllText(System.IO.Path.Combine(ws.Root, "file.txt"), "one\ntwo\nthree\n");
 
         var message = await RunApplyPatchAsync(ws, "file.txt",
@@ -65,7 +65,7 @@ public class PatchEndToEndTests
     public async Task ApplyPatch_StaleFile_WarnsAndApplies()
     {
         using var ws = new TempWorkspace();
-        FileStateJournal.Clear();
+        SessionContext.FileState.Clear();
         ws.WriteFile("file.txt", "one\ntwo\nthree\n");
         System.IO.File.WriteAllText(System.IO.Path.Combine(ws.Root, "file.txt"), "one\nTWO\nthree\n");
 

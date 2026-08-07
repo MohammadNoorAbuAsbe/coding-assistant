@@ -31,10 +31,10 @@ internal static class FileEditHandler
                 }
 
                 bool existed = System.IO.File.Exists(safePath);
-                UndoJournal.Record(safePath, existed ? System.IO.File.ReadAllText(safePath) : null, existed, ToolHandler.WriteFunctionName);
+                SessionContext.Undo.Record(safePath, existed ? System.IO.File.ReadAllText(safePath) : null, existed, ToolHandler.WriteFunctionName);
                 string written = ResponseHandler.RepairContentEncoding(args.content);
                 System.IO.File.WriteAllText(safePath, written);
-                FileStateJournal.RecordWrite(safePath, written);
+                SessionContext.FileState.RecordWrite(safePath, written);
                 return new ToolChatMessage(toolCall.Id, $"Successfully wrote content to {args.file_path}");
             });
     }
@@ -67,13 +67,13 @@ internal static class FileEditHandler
 
         string content = System.IO.File.ReadAllText(safePath);
 
-        if (!FileStateJournal.HasState(safePath))
+        if (!SessionContext.FileState.HasState(safePath))
         {
             return ResponseHandler.CreateErrorResult(toolCall, $"Error: Edit tool cannot edit '{args.file_path}' because the file was not read in this session. Use the Read tool to read the file first, then retry the Edit with old_string copied verbatim from the Read output.");
         }
 
         string? notice = null;
-        if (FileStateJournal.IsStale(safePath, content))
+        if (SessionContext.FileState.IsStale(safePath, content))
         {
             notice = $"Warning: '{args.file_path}' changed on disk since the session last read or wrote it. The edit was applied to the current content, but Read the file to verify the result.";
         }
@@ -229,9 +229,9 @@ internal static class FileEditHandler
         }
 
         string newContent = content.Substring(0, match.Index) + normalizedNew + content.Substring(match.Index + match.Length);
-        UndoJournal.Record(safePath, content, existedBefore: true, ToolHandler.EditFunctionName);
+        SessionContext.Undo.Record(safePath, content, existedBefore: true, ToolHandler.EditFunctionName);
         System.IO.File.WriteAllText(safePath, newContent);
-        FileStateJournal.RecordWrite(safePath, newContent);
+        SessionContext.FileState.RecordWrite(safePath, newContent);
 
         string note = GetMatchNote(match);
         string? diff = TryGenerateDiff(content, newContent, filePath);
@@ -303,9 +303,9 @@ internal static class FileEditHandler
         }
         string newContent = sb.ToString();
 
-        UndoJournal.Record(safePath, content, existedBefore: true, ToolHandler.EditFunctionName);
+        SessionContext.Undo.Record(safePath, content, existedBefore: true, ToolHandler.EditFunctionName);
         System.IO.File.WriteAllText(safePath, newContent);
-        FileStateJournal.RecordWrite(safePath, newContent);
+        SessionContext.FileState.RecordWrite(safePath, newContent);
 
         string? diff = TryGenerateDiff(content, newContent, filePath);
         int oldTotal = CountNewlines(content, 0, content.Length) + 1;

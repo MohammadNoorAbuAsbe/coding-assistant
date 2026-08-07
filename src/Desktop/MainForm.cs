@@ -86,6 +86,7 @@ internal sealed class MainForm : Form
         AppUi.Sink = _sink;
         FormClosed += (_, _) =>
         {
+            _router?.Shutdown();
             if (ReferenceEquals(AppUi.Sink, _sink))
                 AppUi.Sink = null;
         };
@@ -98,8 +99,10 @@ internal sealed class MainForm : Form
         _btnClose.Click += (_, _) => Close();
         _btnNewTab.Click += (_, _) => _router.Handle("{\"cmd\":\"session:new\"}");
 
-        _router.TabsChanged += () => RenderTabs();
-        _router.ActiveSessionChanged += _ => RenderTabs();
+        // Tab events can fire from engine threads (e.g. after a run finishes
+        // and a session title is derived) — marshal to the UI thread.
+        _router.TabsChanged += () => InvokeOnUi(() => RenderTabs());
+        _router.ActiveSessionChanged += _ => InvokeOnUi(() => RenderTabs());
 
         Load += async (_, _) => await InitializeWebViewAsync();
         Shown += (_, _) => RenderTabs();
@@ -215,6 +218,23 @@ internal sealed class MainForm : Form
             _btnMax.Text = "❐";
         }
         _maximized = WindowState == FormWindowState.Maximized;
+    }
+
+    private void InvokeOnUi(Action action)
+    {
+        try
+        {
+            if (IsDisposed || !IsHandleCreated)
+                return;
+            if (InvokeRequired)
+                BeginInvoke(action);
+            else
+                action();
+        }
+        catch
+        {
+            // Form is closing or handle is gone — skip the refresh.
+        }
     }
 
     // ── WebView2 ────────────────────────────────────────────────────

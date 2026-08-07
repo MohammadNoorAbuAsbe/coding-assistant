@@ -10,7 +10,7 @@ public class UndoJournalTests
     public UndoJournalTests()
     {
         Configuration.LoadProviderConfigs();
-        UndoJournal.Clear();
+        SessionContext.Undo.Clear();
     }
 
     private static string ToolText(ToolChatMessage message)
@@ -36,7 +36,7 @@ public class UndoJournalTests
         Assert.Contains("Successfully wrote", ToolText(write!));
         Assert.Equal("new content", ws.ReadFile("file.txt"));
 
-        var entry = UndoJournal.UndoLast();
+        var entry = SessionContext.Undo.UndoLast();
         Assert.NotNull(entry);
         Assert.Equal(ToolHandler.WriteFunctionName, entry!.ToolName);
         Assert.True(entry.ExistedBefore);
@@ -54,7 +54,7 @@ public class UndoJournalTests
         Assert.Contains("Successfully wrote", ToolText(write!));
         Assert.True(File.Exists(Path.Combine(ws.Root, "newfile.txt")));
 
-        var entry = UndoJournal.UndoLast();
+        var entry = SessionContext.Undo.UndoLast();
         Assert.NotNull(entry);
         Assert.False(entry!.ExistedBefore);
         Assert.False(File.Exists(Path.Combine(ws.Root, "newfile.txt")));
@@ -71,7 +71,7 @@ public class UndoJournalTests
         Assert.Contains("Successfully edited", ToolText(edit!));
         Assert.Equal("one\nTWO\nthree\n", ws.ReadFile("file.txt"));
 
-        var entry = UndoJournal.UndoLast();
+        var entry = SessionContext.Undo.UndoLast();
         Assert.NotNull(entry);
         Assert.Equal(ToolHandler.EditFunctionName, entry!.ToolName);
         Assert.Equal("one\ntwo\nthree\n", ws.ReadFile("file.txt"));
@@ -88,7 +88,7 @@ public class UndoJournalTests
         Assert.Contains("Successfully applied 2 hunk(s)", ToolText(patch!));
         Assert.Equal("aaa\nBBB\nccc\nddd\nEEE\n", ws.ReadFile("file.txt"));
 
-        var entry = UndoJournal.UndoLast();
+        var entry = SessionContext.Undo.UndoLast();
         Assert.NotNull(entry);
         Assert.Equal(ToolHandler.ApplyPatchFunctionName, entry!.ToolName);
         Assert.True(entry.ExistedBefore);
@@ -105,7 +105,7 @@ public class UndoJournalTests
         Assert.Contains("Created new file", ToolText(patch!));
         Assert.True(File.Exists(Path.Combine(ws.Root, "created.txt")));
 
-        var entry = UndoJournal.UndoLast();
+        var entry = SessionContext.Undo.UndoLast();
         Assert.NotNull(entry);
         Assert.False(entry!.ExistedBefore);
         Assert.False(File.Exists(Path.Combine(ws.Root, "created.txt")));
@@ -120,7 +120,7 @@ public class UndoJournalTests
         await RunToolAsync(ToolHandler.EditFunctionName,
             new { file_path = "file.txt", old_string = "missing text", new_string = "X" });
 
-        Assert.Empty(UndoJournal.List());
+        Assert.Empty(SessionContext.Undo.List());
     }
 
     [Fact]
@@ -133,12 +133,12 @@ public class UndoJournalTests
         await RunToolAsync(ToolHandler.WriteFunctionName, new { file_path = "a.txt", content = "a2" });
         await RunToolAsync(ToolHandler.WriteFunctionName, new { file_path = "b.txt", content = "b2" });
 
-        var first = UndoJournal.UndoLast();
+        var first = SessionContext.Undo.UndoLast();
         Assert.Equal(Path.Combine(ws.Root, "b.txt"), first!.FullPath);
         Assert.Equal("b1", ws.ReadFile("b.txt"));
         Assert.Equal("a2", ws.ReadFile("a.txt"));
 
-        var second = UndoJournal.UndoLast();
+        var second = SessionContext.Undo.UndoLast();
         Assert.Equal(Path.Combine(ws.Root, "a.txt"), second!.FullPath);
         Assert.Equal("a1", ws.ReadFile("a.txt"));
     }
@@ -146,7 +146,7 @@ public class UndoJournalTests
     [Fact]
     public void UndoLast_EmptyJournal_ReturnsNull()
     {
-        Assert.Null(UndoJournal.UndoLast());
+        Assert.Null(SessionContext.Undo.UndoLast());
     }
 
     [Fact]
@@ -159,23 +159,23 @@ public class UndoJournalTests
         await RunToolAsync(ToolHandler.WriteFunctionName, new { file_path = "a.txt", content = "a2" });
         await RunToolAsync(ToolHandler.WriteFunctionName, new { file_path = "b.txt", content = "b2" });
 
-        var entry = UndoJournal.UndoAt(1);
+        var entry = SessionContext.Undo.UndoAt(1);
         Assert.NotNull(entry);
         Assert.Equal(Path.Combine(ws.Root, "a.txt"), entry!.FullPath);
         Assert.Equal("a1", ws.ReadFile("a.txt"));
         Assert.Equal("b2", ws.ReadFile("b.txt"));
 
-        Assert.Equal(1, UndoJournal.List().Count);
+        Assert.Equal(1, SessionContext.Undo.List().Count);
     }
 
     [Fact]
     public void UndoAt_OutOfRange_ReturnsNullAndKeepsJournal()
     {
         using var ws = new TempWorkspace();
-        UndoJournal.Record(Path.Combine(ws.Root, "a.txt"), "a1", existedBefore: true, "Write");
+        SessionContext.Undo.Record(Path.Combine(ws.Root, "a.txt"), "a1", existedBefore: true, "Write");
 
-        Assert.Null(UndoJournal.UndoAt(5));
-        Assert.Single(UndoJournal.List());
+        Assert.Null(SessionContext.Undo.UndoAt(5));
+        Assert.Single(SessionContext.Undo.List());
     }
 
     [Fact]
@@ -184,10 +184,10 @@ public class UndoJournalTests
         using var ws = new TempWorkspace();
         ws.WriteFile("a.txt", "a1");
 
-        UndoJournal.Record(Path.Combine(ws.Root, "a.txt"), "a1", existedBefore: true, "Write");
-        UndoJournal.Record(Path.Combine(ws.Root, "a.txt"), "a2", existedBefore: true, "Edit");
+        SessionContext.Undo.Record(Path.Combine(ws.Root, "a.txt"), "a1", existedBefore: true, "Write");
+        SessionContext.Undo.Record(Path.Combine(ws.Root, "a.txt"), "a2", existedBefore: true, "Edit");
 
-        var list = UndoJournal.List();
+        var list = SessionContext.Undo.List();
         Assert.Equal(2, list.Count);
         Assert.Equal("Edit", list[0].ToolName);
         Assert.Equal("Write", list[1].ToolName);
@@ -204,11 +204,11 @@ public class UndoJournalTests
         {
             for (int i = 0; i < 5; i++)
             {
-                UndoJournal.Record(Path.Combine(ws.Root, $"f{i}.txt"), "x", existedBefore: true, "Write");
+                SessionContext.Undo.Record(Path.Combine(ws.Root, $"f{i}.txt"), "x", existedBefore: true, "Write");
             }
 
-            Assert.Equal(3, UndoJournal.List().Count);
-            var list = UndoJournal.List();
+            Assert.Equal(3, SessionContext.Undo.List().Count);
+            var list = SessionContext.Undo.List();
             Assert.Equal(Path.Combine(ws.Root, "f4.txt"), list[0].FullPath);
             Assert.Equal(Path.Combine(ws.Root, "f2.txt"), list[2].FullPath);
         }
@@ -222,11 +222,11 @@ public class UndoJournalTests
     public void Clear_EmptiesJournal()
     {
         using var ws = new TempWorkspace();
-        UndoJournal.Record(Path.Combine(ws.Root, "a.txt"), "x", existedBefore: true, "Write");
+        SessionContext.Undo.Record(Path.Combine(ws.Root, "a.txt"), "x", existedBefore: true, "Write");
 
-        UndoJournal.Clear();
+        SessionContext.Undo.Clear();
 
-        Assert.Empty(UndoJournal.List());
-        Assert.Null(UndoJournal.UndoLast());
+        Assert.Empty(SessionContext.Undo.List());
+        Assert.Null(SessionContext.Undo.UndoLast());
     }
 }

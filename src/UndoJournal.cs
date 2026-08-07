@@ -3,15 +3,17 @@ using System.Collections.ObjectModel;
 namespace TerminalAiAssistant;
 
 /// <summary>
-/// In-memory, session-scoped journal of file modifications made by the
-/// assistant's file-modifying tools (Write, Edit, ApplyPatch). Each entry
-/// holds the file's before-image so the user can roll back a change with
-/// /undo. Cleared on session reset (/new).
+/// Session-scoped journal of file modifications made by the assistant's
+/// file-modifying tools (Write, Edit, ApplyPatch). Each entry holds the
+/// file's before-image so the user can roll back a change with /undo.
+/// Each <see cref="ChatSession"/> owns one instance. Undo snapshots are
+/// intentionally NOT persisted across restarts: the before-image of a file
+/// from a previous run could clobber newer on-disk edits.
 /// </summary>
-public static class UndoJournal
+public sealed class UndoJournal
 {
-    private static readonly List<UndoEntry> Entries = new();
-    private static readonly object Gate = new();
+    private readonly List<UndoEntry> _entries = new();
+    private readonly object _gate = new();
 
     /// <summary>
     /// Records the state of a file immediately before it is written.
@@ -20,16 +22,16 @@ public static class UndoJournal
     /// <param name="beforeContent">The file's current content, or null if it did not exist.</param>
     /// <param name="existedBefore">Whether the file existed before this modification.</param>
     /// <param name="toolName">The tool that is about to modify the file.</param>
-    public static void Record(string fullPath, string? beforeContent, bool existedBefore, string toolName)
+    public void Record(string fullPath, string? beforeContent, bool existedBefore, string toolName)
     {
-        lock (Gate)
+        lock (_gate)
         {
-            Entries.Add(new UndoEntry(fullPath, beforeContent, existedBefore, toolName, DateTime.Now));
+            _entries.Add(new UndoEntry(fullPath, beforeContent, existedBefore, toolName, DateTime.Now));
             int limit = Configuration.GetUndoHistoryLimit();
-            if (Entries.Count > limit)
-                Entries.RemoveRange(0, Entries.Count - limit);
+            if (_entries.Count > limit)
+                _entries.RemoveRange(0, _entries.Count - limit);
         }
-        AppUi.PublishChanges();
+        AppUi.PublishChanges(this);
     }
 
     /// <summary>
@@ -38,15 +40,15 @@ public static class UndoJournal
     /// was created by the recorded modification. Returns null if the journal
     /// is empty.
     /// </summary>
-    public static UndoEntry? UndoLast()
+    public UndoEntry? UndoLast()
     {
         UndoEntry? entry;
-        lock (Gate)
+        lock (_gate)
         {
-            if (Entries.Count == 0)
+            if (_entries.Count == 0)
                 return null;
-            entry = Entries[^1];
-            Entries.RemoveAt(Entries.Count - 1);
+            entry = _entries[^1];
+            _entries.RemoveAt(_entries.Count - 1);
         }
 
         if (entry.ExistedBefore)
@@ -61,11 +63,11 @@ public static class UndoJournal
         return entry;
     }
 
-    public static UndoEntry? Peek()
+    public UndoEntry? Peek()
     {
-        lock (Gate)
+        lock (_gate)
         {
-            return Entries.Count > 0 ? Entries[^1] : null;
+            return _entries.Count > 0 ? _entries[^1] : null;
         }
     }
 
@@ -74,15 +76,15 @@ public static class UndoJournal
     /// file to its before-image, mirroring <see cref="UndoLast"/>. Returns null
     /// if the index is out of range.
     /// </summary>
-    public static UndoEntry? UndoAt(int index)
+    public UndoEntry? UndoAt(int index)
     {
         UndoEntry? entry;
-        lock (Gate)
+        lock (_gate)
         {
-            if (index < 0 || index >= Entries.Count)
+            if (index < 0 || index >= _entries.Count)
                 return null;
-            entry = Entries[Entries.Count - 1 - index];
-            Entries.RemoveAt(Entries.Count - 1 - index);
+            entry = _entries[_entries.Count - 1 - index];
+            _entries.RemoveAt(_entries.Count - 1 - index);
         }
 
         if (entry.ExistedBefore)
@@ -100,19 +102,19 @@ public static class UndoJournal
     /// <summary>
     /// Returns all entries, most recent first.
     /// </summary>
-    public static IReadOnlyList<UndoEntry> List()
+    public IReadOnlyList<UndoEntry> List()
     {
-        lock (Gate)
+        lock (_gate)
         {
-            return Entries.Count == 0 ? [] : new ReadOnlyCollection<UndoEntry>(Entries.AsEnumerable().Reverse().ToList());
+            return _entries.Count == 0 ? [] : new ReadOnlyCollection<UndoEntry>(_entries.AsEnumerable().Reverse().ToList());
         }
     }
 
-    public static void Clear()
+    public void Clear()
     {
-        lock (Gate)
+        lock (_gate)
         {
-            Entries.Clear();
+            _entries.Clear();
         }
     }
 }

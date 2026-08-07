@@ -30,13 +30,13 @@ internal static partial class PatchHandler
                 }
 
                 string raw = System.IO.File.ReadAllText(safePath);
-                if (!FileStateJournal.HasState(safePath))
+                if (!SessionContext.FileState.HasState(safePath))
                 {
                     return ResponseHandler.CreateErrorResult(toolCall, $"Error: ApplyPatch cannot modify '{args.file_path}' because the file was not read in this session. Use the Read tool to read the file first, then retry the patch.");
                 }
 
                 string? notice = null;
-                if (FileStateJournal.IsStale(safePath, raw))
+                if (SessionContext.FileState.IsStale(safePath, raw))
                 {
                     notice = $"Warning: '{args.file_path}' changed on disk since the session last read or wrote it. The patch was applied to the current content, but Read the file to verify the result.";
                 }
@@ -93,7 +93,7 @@ internal static partial class PatchHandler
             .Select(TrimCR)
             .ToList();
         string content = JoinLines(lines, "\n", trailingNewline: true);
-        UndoJournal.Record(safePath, beforeContent: null, existedBefore: false, ToolHandler.ApplyPatchFunctionName);
+        SessionContext.Undo.Record(safePath, beforeContent: null, existedBefore: false, ToolHandler.ApplyPatchFunctionName);
         System.IO.File.WriteAllText(safePath, content);
 
         int added = lines.Count;
@@ -126,9 +126,9 @@ internal static partial class PatchHandler
         string eol = raw.Contains("\r\n") ? "\r\n" : "\n";
         bool trailingNewline = DetermineTrailingNewline(raw.EndsWith('\n'), placements);
         string content = JoinLines(originalLines.Select(TrimCR), eol, trailingNewline);
-        UndoJournal.Record(safePath, raw, existedBefore: true, ToolHandler.ApplyPatchFunctionName);
+        SessionContext.Undo.Record(safePath, raw, existedBefore: true, ToolHandler.ApplyPatchFunctionName);
         System.IO.File.WriteAllText(safePath, content);
-        FileStateJournal.RecordWrite(safePath, content);
+        SessionContext.FileState.RecordWrite(safePath, content);
 
         return BuildApplySummary(toolCall, displayPath, raw, content, placements, noOps, notice);
     }

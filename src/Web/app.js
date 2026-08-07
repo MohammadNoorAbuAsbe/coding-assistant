@@ -93,6 +93,9 @@ const els = {
   paletteOverlay: $('palette-overlay'),
   paletteInput: $('palette-input'),
   paletteResults: $('palette-results'),
+  historyOverlay: $('history-overlay'),
+  historyList: $('history-list'),
+  btnHistoryClose: $('btn-history-close'),
   settingsOverlay: $('settings-overlay'),
   settingsProviders: $('settings-providers'),
   settingsModels: $('settings-models'),
@@ -719,6 +722,14 @@ const handlers = {
     els.viewerContent.innerHTML = '';
     els.viewerContent.appendChild(pre);
     els.viewerPath.textContent = p.path || state.viewerPath;
+  },
+
+  sessions(p) {
+    renderHistoryList(p.items || []);
+  },
+
+  'session:messages'(p) {
+    renderTranscript(p.items || []);
   }
 };
 
@@ -792,6 +803,103 @@ function renderChanges() {
   });
 }
 
+// ── Sessions / history ─────────────────────────────────────────
+function fmtWhen(ts) {
+  if (!ts) return '';
+  const diff = Date.now() - ts;
+  if (diff < 60e3) return 'just now';
+  if (diff < 3600e3) return Math.floor(diff / 60e3) + 'm ago';
+  if (diff < 86400e3) return Math.floor(diff / 3600e3) + 'h ago';
+  if (diff < 7 * 86400e3) return Math.floor(diff / 86400e3) + 'd ago';
+  const d = new Date(ts);
+  return (d.getMonth() + 1) + '/' + d.getDate() + '/' + d.getFullYear();
+}
+
+function renderTranscript(items) {
+  els.messages.innerHTML = '';
+  state.activeTurn = null;
+  state.toolCards.clear();
+  state.toolCount = 0;
+  if (!items || !items.length) {
+    ensureHero();
+    scrollBottom(true);
+    return;
+  }
+  items.forEach(m => {
+    if (m.role === 'user') {
+      userMessage([{ text: m.text || '' }]);
+    } else if (m.role === 'assistant') {
+      const turn = newTurn();
+      if (m.text) appendStream(m.text, true);
+      const tools = m.tools || [];
+      if (tools.length) {
+        const wrap = document.createElement('div');
+        wrap.className = 'transcript-tools';
+        tools.forEach(t => {
+          const chip = document.createElement('span');
+          chip.className = 'tool-chip';
+          chip.textContent = (t.name || 'tool') + (t.arg ? ' · ' + t.arg : '');
+          chip.title = chip.textContent;
+          wrap.appendChild(chip);
+        });
+        turn.body.appendChild(wrap);
+      }
+      if (!m.text) {
+        turn.content.innerHTML = '<div class="empty-stream"></div>';
+      }
+      finishTurn();
+    }
+  });
+  scrollBottom(true);
+}
+
+function openHistory() {
+  els.historyOverlay.classList.remove('hidden');
+  els.historyList.innerHTML = '<div class="history-empty">Loading sessions…</div>';
+  bridge.post('session:history', {});
+}
+
+function closeHistory() {
+  els.historyOverlay.classList.add('hidden');
+}
+
+function renderHistoryList(items) {
+  const list = els.historyList;
+  list.innerHTML = '';
+  if (!items.length) {
+    list.innerHTML = '<div class="history-empty">No saved sessions yet — conversations are saved automatically.</div>';
+    return;
+  }
+  items.forEach(s => {
+    const row = document.createElement('div');
+    row.className = 'history-item';
+    row.innerHTML =
+      '<span class="h-ic">' + I('clock') + '</span>' +
+      '<div class="h-main">' +
+      '<div class="h-title" title="' + escapeHtml(s.title || '') + '">' + escapeHtml(s.title || 'Untitled') + '</div>' +
+      '<div class="h-meta">' + fmtWhen(s.updated) +
+      (s.turns ? ' · ' + s.turns + ' turns' : '') +
+      (s.workspace ? ' · ' + escapeHtml(shortPath(s.workspace, 2)) : '') + '</div>' +
+      '</div>' +
+      '<button class="h-open" title="Resume this session">' + I('doc') + '</button>' +
+      '<button class="h-del" title="Delete this session">' + I('trash') + '</button>';
+    row.querySelector('.h-open').addEventListener('click', e => {
+      e.stopPropagation();
+      bridge.post('session:resume', { id: s.id });
+      closeHistory();
+    });
+    row.querySelector('.h-del').addEventListener('click', e => {
+      e.stopPropagation();
+      bridge.post('session:delete', { id: s.id });
+    });
+    row.addEventListener('click', () => {
+      bridge.post('session:resume', { id: s.id });
+      closeHistory();
+    });
+    list.appendChild(row);
+  });
+}
+
 // ── Composer ────────────────────────────────────────────────────────
 const SLASH_COMMANDS = [
   { name: 'help', desc: 'Show help and usage', icon: 'question' },
@@ -848,8 +956,7 @@ function runSlashCommand(raw) {
       bridge.post('undo:revert', { latest: true });
       break;
     case 'history':
-      bridge.post('session:history', {});
-      toast('Session history is shown in the shell');
+      openHistory();
       break;
     case 'autopilot':
       bridge.post('autopilot:toggle', {});
@@ -873,7 +980,7 @@ function sendHelp() {
     '- `/help` — this help',
     '- `/new` — start a new session',
     '- `/undo` — revert the latest file change',
-    '- `/history` — list past sessions',
+    '- `/history` — resume a past session',
     '- `/autopilot` — toggle autopilot mode',
     '- `/theme` — toggle dark / light',
     '- `/exit` — close the app',
@@ -1188,6 +1295,7 @@ function onKeydown(e) {
   if (e.key === 'Escape') {
     if (!els.questionOverlay.classList.contains('hidden')) return;
     if (state.busy) { e.preventDefault(); stopTurn(); return; }
+    if (!els.historyOverlay.classList.contains('hidden')) { closeHistory(); return; }
     if (state.viewerPath) { closeViewer(); return; }
     closePalette();
     closeSettings();
@@ -1348,15 +1456,18 @@ function init() {
     closeSettings();
     bridge.post('folder:pick', {});
   });
-  document.querySelectorAll('#settings-overlay, #palette-overlay').forEach(ov => {
+  document.querySelectorAll('#settings-overlay, #palette-overlay, #history-overlay').forEach(ov => {
     ov.addEventListener('mousedown', e => {
       if (e.target === ov) {
         if (ov === els.settingsOverlay) closeSettings();
-        else closePalette();
+        else if (ov === els.paletteOverlay) closePalette();
+        else closeHistory();
       }
     });
   });
   document.addEventListener('keydown', onKeydown);
+
+  els.btnHistoryClose.addEventListener('click', closeHistory);
 
   els.questionOverlay.addEventListener('mousedown', e => {
     if (e.target === els.questionOverlay && !state.busy) {

@@ -43,11 +43,11 @@ public sealed class TempWorkspace : IDisposable
         File.WriteAllText(fullPath, content);
         // Emulates the session's Write tool: the file's content is now known,
         // so subsequent Edit/ApplyPatch calls are allowed (not "never read").
-        FileStateJournal.RecordWrite(fullPath, content);
+        SessionContext.FileState.RecordWrite(fullPath, content);
         return fullPath;
     }
 
-    /// <summary>Writes a file to disk without recording it in FileStateJournal.</summary>
+    /// <summary>Writes a file to disk without recording it in SessionContext.FileState.</summary>
     public string WriteFileNoJournal(string relativePath, string content)
     {
         string fullPath = Path.Combine(Root, relativePath);

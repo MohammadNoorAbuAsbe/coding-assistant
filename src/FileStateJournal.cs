@@ -8,37 +8,39 @@ namespace TerminalAiAssistant;
 /// the content hash at that time. Used to enforce a read-before-edit contract:
 /// edits on files the session has never read are refused, and edits on files
 /// whose on-disk content changed since the last Read/Write are flagged.
-/// Cleared on session reset (/new) alongside UndoJournal.
+/// Each <see cref="ChatSession"/> owns one instance; hash entries can be
+/// persisted with the session and restored safely (any on-disk change since
+/// the last read is detected by the hash comparison).
 /// </summary>
-public static class FileStateJournal
+public sealed class FileStateJournal
 {
-    private static readonly Dictionary<string, JournalEntry> Entries = new(StringComparer.OrdinalIgnoreCase);
-    private static readonly object Gate = new();
+    private readonly Dictionary<string, JournalEntry> _entries = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _gate = new();
 
-    public static void RecordRead(string fullPath, string content, int startLine, int endLine)
+    public void RecordRead(string fullPath, string content, int startLine, int endLine)
     {
-        lock (Gate)
+        lock (_gate)
         {
-            Entries[fullPath] = new JournalEntry(ComputeHash(content), writtenBySession: false, startLine, endLine);
+            _entries[fullPath] = new JournalEntry(ComputeHash(content), writtenBySession: false, startLine, endLine);
         }
     }
 
-    public static void RecordWrite(string fullPath, string content)
+    public void RecordWrite(string fullPath, string content)
     {
-        lock (Gate)
+        lock (_gate)
         {
-            Entries[fullPath] = new JournalEntry(ComputeHash(content), writtenBySession: true, 0, 0);
+            _entries[fullPath] = new JournalEntry(ComputeHash(content), writtenBySession: true, 0, 0);
         }
     }
 
     /// <summary>
     /// True if the session has read or written this file at least once.
     /// </summary>
-    public static bool HasState(string fullPath)
+    public bool HasState(string fullPath)
     {
-        lock (Gate)
+        lock (_gate)
         {
-            return Entries.ContainsKey(fullPath);
+            return _entries.ContainsKey(fullPath);
         }
     }
 
@@ -46,11 +48,11 @@ public static class FileStateJournal
     /// True if the file's current on-disk content differs from what the session
     /// last read or wrote. False when the session has no state for the file.
     /// </summary>
-    public static bool IsStale(string fullPath, string currentContent)
+    public bool IsStale(string fullPath, string currentContent)
     {
-        lock (Gate)
+        lock (_gate)
         {
-            return Entries.TryGetValue(fullPath, out var entry)
+            return _entries.TryGetValue(fullPath, out var entry)
                 && entry.Hash != ComputeHash(currentContent);
         }
     }
@@ -60,11 +62,11 @@ public static class FileStateJournal
     /// this file via the Read tool, or false when the file was never read (or
     /// was only written, never read back).
     /// </summary>
-    public static bool TryGetReadCoverage(string fullPath, out int startLine, out int endLine)
+    public bool TryGetReadCoverage(string fullPath, out int startLine, out int endLine)
     {
-        lock (Gate)
+        lock (_gate)
         {
-            if (Entries.TryGetValue(fullPath, out var entry)
+            if (_entries.TryGetValue(fullPath, out var entry)
                 && !entry.WrittenBySession
                 && entry.LastReadStart > 0)
             {
@@ -78,11 +80,44 @@ public static class FileStateJournal
         return false;
     }
 
-    public static void Clear()
+    public void Clear()
     {
-        lock (Gate)
+        lock (_gate)
         {
-            Entries.Clear();
+            _entries.Clear();
+        }
+    }
+
+    // ── Persistence (safe: staleness is re-detected by hash comparison) ──
+
+    public List<StoredFileState> ToStored()
+    {
+        lock (_gate)
+        {
+            return _entries
+                .Select(kv => new StoredFileState
+                {
+                    Path = kv.Key,
+                    Hash = kv.Value.Hash,
+                    WrittenBySession = kv.Value.WrittenBySession,
+                    LastReadStart = kv.Value.LastReadStart,
+                    LastReadEnd = kv.Value.LastReadEnd
+                })
+                .ToList();
+        }
+    }
+
+    public void Restore(IEnumerable<StoredFileState> stored)
+    {
+        lock (_gate)
+        {
+            foreach (var s in stored)
+            {
+                if (!string.IsNullOrEmpty(s.Path) && !string.IsNullOrEmpty(s.Hash))
+                {
+                    _entries[s.Path] = new JournalEntry(s.Hash, s.WrittenBySession, s.LastReadStart, s.LastReadEnd);
+                }
+            }
         }
     }
 

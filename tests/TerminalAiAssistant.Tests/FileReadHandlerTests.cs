@@ -12,12 +12,12 @@ public class FileReadHandlerTests : IDisposable
     {
         _ws = new TempWorkspace();
         Configuration.LoadProviderConfigs();
-        FileStateJournal.Clear();
+        SessionContext.FileState.Clear();
     }
 
     public void Dispose()
     {
-        FileStateJournal.Clear();
+        SessionContext.FileState.Clear();
         _ws.Dispose();
     }
 

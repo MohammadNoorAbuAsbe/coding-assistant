@@ -399,7 +399,7 @@ public class ResponseHandlerToolTests
     public async Task Edit_NeverReadFile_Refuses()
     {
         using var ws = new TempWorkspace();
-        FileStateJournal.Clear();
+        SessionContext.FileState.Clear();
         System.IO.File.WriteAllText(System.IO.Path.Combine(ws.Root, "file.txt"), "foo\nbar\n");
 
         var message = await RunAsync(ToolHandler.EditFunctionName, new { file_path = "file.txt", old_string = "bar", new_string = "BAZ" });
@@ -414,7 +414,7 @@ public class ResponseHandlerToolTests
     public async Task Edit_AfterRead_Succeeds()
     {
         using var ws = new TempWorkspace();
-        FileStateJournal.Clear();
+        SessionContext.FileState.Clear();
         ws.WriteFile("file.txt", "foo\nbar\n");
 
         await RunAsync(ToolHandler.ReadFunctionName, new { file_path = "file.txt" });
@@ -428,7 +428,7 @@ public class ResponseHandlerToolTests
     public async Task Edit_StaleFile_WarnsAndApplies()
     {
         using var ws = new TempWorkspace();
-        FileStateJournal.Clear();
+        SessionContext.FileState.Clear();
         ws.WriteFile("file.txt", "foo\nbar\n");
         System.IO.File.WriteAllText(System.IO.Path.Combine(ws.Root, "file.txt"), "foo\nCHANGED\n");
 
@@ -444,7 +444,7 @@ public class ResponseHandlerToolTests
     public async Task Edit_DisproportionateMatch_Refuses()
     {
         using var ws = new TempWorkspace();
-        FileStateJournal.Clear();
+        SessionContext.FileState.Clear();
         var lines = new List<string> { "x" };
         for (int i = 0; i < 8; i++) lines.Add($"filler {i}");
         lines.Add("y");
@@ -461,7 +461,7 @@ public class ResponseHandlerToolTests
     public async Task Edit_CRLFFile_PreservesLineEndings()
     {
         using var ws = new TempWorkspace();
-        FileStateJournal.Clear();
+        SessionContext.FileState.Clear();
         ws.WriteFile("file.txt", "a\r\nb\r\nc\r\n");
 
         var message = await RunAsync(ToolHandler.EditFunctionName, new { file_path = "file.txt", old_string = "a\nb", new_string = "A\nB" });
@@ -476,7 +476,7 @@ public class ResponseHandlerToolTests
     public async Task Edit_DeleteLine_RemovesTrailingNewline()
     {
         using var ws = new TempWorkspace();
-        FileStateJournal.Clear();
+        SessionContext.FileState.Clear();
         ws.WriteFile("file.txt", "line1\nline2\nline3\n");
 
         var message = await RunAsync(ToolHandler.EditFunctionName, new { file_path = "file.txt", old_string = "line2", new_string = "" });

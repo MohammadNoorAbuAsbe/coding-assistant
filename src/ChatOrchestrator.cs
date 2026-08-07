@@ -8,6 +8,19 @@ public static class ChatOrchestrator
 {
     public static async Task Run(ChatSession session, string prompt, CancellationToken cancellationToken = default)
     {
+        SessionContext.Current = session;
+        try
+        {
+            await RunCore(session, prompt, cancellationToken);
+        }
+        finally
+        {
+            SessionContext.Current = null;
+        }
+    }
+
+    private static async Task RunCore(ChatSession session, string prompt, CancellationToken cancellationToken)
+    {
         Diag.Log("orchestrator:enter prompt=" + (prompt.Length > 60 ? prompt[..60] + "…" : prompt));
         var client = ChatService.CreateClient();
         Diag.Log("orchestrator:client-ok provider=" + Configuration.GetProvider() + " model=" + Configuration.GetModel());
@@ -99,7 +112,7 @@ public static class ChatOrchestrator
         int skippedEditNudges = 0;
         var stallTracker = new StallTracker();
         int stallInterventions = 0;
-        int journalCount = UndoJournal.List().Count;
+        int journalCount = SessionContext.Undo.List().Count;
         int turnsSinceFileChange = 0;
 
         for (int iteration = 0; maxIterations == null || iteration < maxIterations; iteration++)
@@ -141,7 +154,7 @@ public static class ChatOrchestrator
 
             if (Autopilot.IsActive)
             {
-                int newJournalCount = UndoJournal.List().Count;
+                int newJournalCount = SessionContext.Undo.List().Count;
                 if (newJournalCount != journalCount)
                 {
                     journalCount = newJournalCount;

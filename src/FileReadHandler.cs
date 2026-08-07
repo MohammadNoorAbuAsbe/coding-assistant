@@ -47,8 +47,8 @@ internal static class FileReadHandler
         // Read dedup: if this file was already read this session and the
         // file has not changed on disk, the content is still in the
         // conversation. Return a short pointer instead of re-injecting tokens.
-        if (FileStateJournal.TryGetReadCoverage(safePath, out int knownStart, out int knownEnd)
-            && !FileStateJournal.IsStale(safePath, string.Join("\n", lines))
+        if (SessionContext.FileState.TryGetReadCoverage(safePath, out int knownStart, out int knownEnd)
+            && !SessionContext.FileState.IsStale(safePath, string.Join("\n", lines))
             && startLine >= knownStart && endLine <= knownEnd)
         {
             string coverage = knownStart == knownEnd
@@ -59,12 +59,12 @@ internal static class FileReadHandler
         }
 
         string fileText = FormatReadLines(lines, startLine, endLine, "");
-        if (FileStateJournal.HasState(safePath) && FileStateJournal.IsStale(safePath, string.Join("\n", lines)))
+        if (SessionContext.FileState.HasState(safePath) && SessionContext.FileState.IsStale(safePath, string.Join("\n", lines)))
         {
             fileText = "[File changed on disk since last read — content below is current.]\n" + fileText;
         }
 
-        FileStateJournal.RecordRead(safePath, string.Join("\n", lines), startLine, endLine);
+        SessionContext.FileState.RecordRead(safePath, string.Join("\n", lines), startLine, endLine);
         return new ToolChatMessage(toolCall.Id, TruncateToTokenLimit(fileText, lines, startLine, endLine));
     }
 
