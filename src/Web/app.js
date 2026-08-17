@@ -45,7 +45,8 @@ const state = {
   treeOpen: new Set(),
   viewerPath: null,
   paused: false,
-  panel: 'files'
+  panel: 'files',
+  lastPrompt: null
 };
 
 const $ = id => document.getElementById(id);
@@ -558,8 +559,16 @@ function finishTurn() {
   if (turn.error) {
     const err = document.createElement('div');
     err.className = 'err-banner';
-    err.innerHTML = I('x') + '<span></span>';
-    err.querySelector('span').textContent = turn.error;
+    err.innerHTML = I('x') + '<span class="e-msg"></span>' +
+      '<button class="try-again">' + I('refresh') + '<span>Try again</span></button>';
+    err.querySelector('.e-msg').textContent = turn.error;
+    err.querySelector('.try-again').addEventListener('click', () => {
+      const text = state.lastPrompt;
+      if (!text || state.busy) return;
+      userMessage([{ text }]);
+      setBusy(true);
+      bridge.post('send', { text });
+    });
     turn.body.appendChild(err);
   }
   const stop = turn.body.querySelector('.stop-btn');
@@ -949,6 +958,7 @@ function sendPrompt() {
     return;
   }
   userMessage([{ text }]);
+  state.lastPrompt = text;
   els.input.value = '';
   autoGrow();
   hideSlashMenu();

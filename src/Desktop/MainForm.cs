@@ -115,7 +115,7 @@ internal sealed class MainForm : Form
         {
             Dock = DockStyle.Top,
             Height = TitleBarHeight,
-            BackColor = Color.FromArgb(22, 22, 23)
+            BackColor = Color.FromArgb(24, 24, 27)
         };
         return bar;
     }
@@ -151,10 +151,10 @@ internal sealed class MainForm : Form
         b.FlatAppearance.BorderSize = 0;
         b.FlatAppearance.MouseOverBackColor = isClose
             ? Color.FromArgb(196, 43, 28)
-            : Color.FromArgb(37, 71, 20);
+            : Color.FromArgb(180, 83, 9);
         b.FlatAppearance.MouseDownBackColor = isClose
             ? Color.FromArgb(185, 28, 28)
-            : Color.FromArgb(22, 22, 23);
+            : Color.FromArgb(24, 24, 27);
         b.ForeColor = Color.FromArgb(128, 128, 128);
         b.Font = new Font("Segoe UI Variable", 11F, FontStyle.Regular);
         b.TextAlign = ContentAlignment.MiddleCenter;
@@ -190,8 +190,8 @@ internal sealed class MainForm : Form
             tab.Location = new Point(x, (TitleBarHeight - TabHeight) / 2);
             tab.FlatAppearance.BorderSize = 0;
             bool isActive = id == _router.ActiveTabId;
-            tab.BackColor = isActive ? Color.FromArgb(22, 22, 23) : Color.Transparent;
-            tab.ForeColor = isActive ? Color.FromArgb(172, 255, 10) : Color.FromArgb(128, 128, 128);
+            tab.BackColor = isActive ? Color.FromArgb(24, 24, 27) : Color.Transparent;
+            tab.ForeColor = isActive ? Color.FromArgb(245, 158, 11) : Color.FromArgb(128, 128, 128);
             tab.Font = new Font("Segoe UI Variable", 9F, isActive ? FontStyle.Bold : FontStyle.Regular);
             tab.Click += (_, _) =>
             {
