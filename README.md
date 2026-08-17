@@ -6,13 +6,12 @@ An AI coding assistant that uses LLMs to read, write, edit, search, and execute 
 
 - **Desktop app (Windows)** — borderless native shell with session tabs, sidebar file tree, live tool cards, reasoning viewer, undo journal, command palette and settings drawer; runs on the WebView2 Runtime
 - **Multi-provider** — Ollama (local), OpenRouter, OpenAI, and Google Gemini (cloud)
-- **Interactive menu** — select provider, model, and enter prompts in a loop
-- **13 tools**: Read, Write, Edit (fuzzy match), ApplyPatch (unified diffs, fuzzy), Diff (change previews), Bash, Glob, Grep (ripgrep), WebFetch (URLs), WebSearch (Tavily), Question (interactive), Task (sub-agents), TodoWrite (task lists)
+- **13 tools**: Read, Write, Edit (fuzzy match), ApplyPatch (unified diffs, fuzzy), Diff (change previews), PowerShell, Glob, Grep (ripgrep), WebFetch (URLs), WebSearch (Tavily), Question (interactive), Task (sub-agents), TodoWrite (task lists)
 - **Sub-agents** — delegate complex subtasks to independent sub-agents with their own tool loop
 - **Streaming** — responses appear in real-time as the model generates them
 - **Context window management** — automatic truncation to prevent token overflow
 - **Agent loop** — continues working until the task is done (optional `MAX_ITERATIONS` cap)
-- **Autopilot mode** — experimental: the agent runs in an infinite loop improving the project on its own until you press Ctrl+C; Question tool calls are auto-answered ("decide yourself and continue") instead of pausing for input
+- **Autopilot mode** — experimental: the agent runs in an infinite loop improving the project on its own until you stop it; Question tool calls are auto-answered ("decide yourself and continue") instead of pausing for input
 - **Undo / rollback** — every Write/Edit/ApplyPatch records a before-image; `/undo` restores the most recent change (or deletes newly created files) and `/history` lists recorded changes
 - **`.env` support** — load API keys and config from a `.env` file
 - **`config.json`** — customize providers, models, and endpoints
@@ -22,7 +21,6 @@ An AI coding assistant that uses LLMs to read, write, edit, search, and execute 
 - **Web search** — Tavily integration for fetching up-to-date web content
 - **Question tool** — asks the user for decisions with multiple-choice options
 - **OpenRouter headers** — sends `HTTP-Referer` and `X-Title` for OpenRouter rankings
-- **ANSI color rendering** — renders markdown to ANSI colors for console output
 - **Path validation** — validates and sanitizes file paths for security
 
 ## Prerequisites
@@ -71,14 +69,14 @@ An AI coding assistant that uses LLMs to read, write, edit, search, and execute 
 
   > **Configurable Models**: Edit `config.json` to add/remove models under the `ollama` provider. Example: `"models": ["qwen3:8b", "llama3", "mistral", "phi3"]`.
 
-  > **Non-interactive mode**: Use environment variables like `AI_PROVIDER=ollama` and `AI_MODEL=phi3` to specify the model without prompts.
+  > **Start with a specific model**: Use environment variables like `AI_PROVIDER=ollama` and `AI_MODEL=phi3` to pick the model without opening the Settings drawer.
 - **OpenRouter**: Get an API key from [OpenRouter](https://openrouter.ai) and set `OPENROUTER_API_KEY`.
 - **OpenAI**: Get an API key from the [Azure Portal](https://portal.azure.com) or [OpenAI](https://platform.openai.com) and set `OPENAI_API_KEY`.
 - **Google Gemini**: Get a free API key from [Google AI Studio](https://aistudio.google.com/apikey) and set `GEMINI_API_KEY`. No credit card required — the free tier covers Flash models (e.g., `gemini-3.6-flash`, `gemini-2.5-flash`). Uses the OpenAI-compatible endpoint, so all tools work.
 
 ### Quick non-interactive mode
 
-Set `AI_PROVIDER` and optionally `AI_MODEL` environment variables to skip the menu:
+Set `AI_PROVIDER` and optionally `AI_MODEL` environment variables to start directly with a provider/model instead of the app defaults:
 
 ```sh
 set AI_PROVIDER=openai
@@ -91,7 +89,7 @@ dotnet run
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `AI_PROVIDER` | No | `ollama` | Provider to use (`ollama`, `openrouter`, `openai`, `gemini`) |
-| `AI_MODEL` | No | provider default | Model to use (skips model selection menu) |
+| `AI_MODEL` | No | provider default | Model to use (skips model selection in Settings) |
 | `OPENROUTER_API_KEY` | For OpenRouter | — | API key for OpenRouter |
 | `OPENROUTER_BASE_URL` | No | `https://openrouter.ai/api/v1` | OpenRouter endpoint |
 | `OPENROUTER_SITE_URL` | No | — | Sent as `HTTP-Referer` header (for OpenRouter rankings) |
@@ -109,12 +107,11 @@ dotnet run
 | `MAX_TOOL_RESULT_TOKENS` | No | 20% of context window (local) / 40% (cloud) | Max tokens per tool result (auto-truncated; local models get a tighter budget so they read in focused ranges) |
 | `MODEL_TEMPERATURE` | No | `0` | Sampling temperature; 0 gives the most deterministic, reliable tool calls (small models benefit the most) |
 | `BASH_TIMEOUT` | No | `120000` (ms) | Timeout for Bash tool commands |
-| `AUTOPILOT` | No | — | Set to `1` to start directly in autonomous mode: the agent continuously improves the project (one improvement per cycle, picking the next itself) until you stop it with Ctrl+C |
+| `AUTOPILOT` | No | — | Set to `1` to start directly in autonomous mode: the agent continuously improves the project (one improvement per cycle, picking the next itself) until you stop it |
 | `AUTO_VERIFY` | No | `false` (local) / `true` (cloud) | Auto-run the verify command after file-modifying tool calls; off by default for local models to keep the agent loop fast. Always disabled in autopilot mode (the running process locks the build output). |
 | `VERIFY_COMMAND` | No | `dotnet build --nologo -v q` | Command used by auto-verification |
 | `VERIFY_TIMEOUT` | No | `120000` (ms) | Timeout for the verify command |
 | `UNDO_HISTORY_LIMIT` | No | `100` | Max file changes kept in the undo journal |
-| `NO_COLOR` | No | — | Set to any value to disable colored console output |
 
 Any provider's base URL can be overridden via `{PROVIDER}_BASE_URL` (e.g., `OPENAI_BASE_URL`).
 
@@ -197,10 +194,7 @@ src/
 ├── MatchFinder.cs        # Fuzzy text matching for the Edit tool
 ├── PatchHandler.cs       # ApplyPatch (unified diff application) and Diff (change preview) tools
 ├── PathValidator.cs      # Validates and sanitizes file paths
-├── AnsiRenderer.cs       # Renders markdown to ANSI colors for console output
-├── ConsoleStyler.cs      # Helper for styling console output
-├── MenuHandler.cs        # Interactive provider/model selection, Ollama discovery
-├── QuestionHandler.cs    # Interactive Question tool implementation
+├── QuestionHandler.cs    # Question tool implementation (web UI modal / autopilot auto-answer)
 ├── ProviderConfig.cs     # Provider configuration model
 ├── ResponseHandler.cs    # Tool call execution (Read, Write, Edit, Bash, Glob, Grep)
 ├── RipgrepHelper.cs      # ripgrep argument builder and path finder
@@ -233,33 +227,29 @@ Test projects live under `tests/`. CI (GitHub Actions, `.github/workflows/ci.yml
 
 ## Usage Examples
 
-### Interactive Mode
+### Starting the app
 
-Run `dotnet run` and follow the prompts to:
-1. Select a provider (Ollama, OpenRouter, OpenAI, Google Gemini)
-2. Select a model
-3. Enter your prompt
-4. The assistant will use tools to complete the task and return a summary
+Run `dotnet run` to launch the desktop app. Pick a provider and model in the Settings drawer (`Ctrl+,`) and type your prompt in the composer. The assistant uses tools to complete the task and returns a summary.
 
 ### Non-Interactive Mode
 
-Set environment variables to skip the menu:
+Set environment variables to start with a specific provider/model without touching the Settings drawer:
 
 ```sh
 # Using OpenAI
 set AI_PROVIDER=openai
 set AI_MODEL=gpt-4o
-dotnet run "Explain how to implement a binary search tree in C#"
+dotnet run
 
 # Using Ollama with a specific model
 set AI_PROVIDER=ollama
 set AI_MODEL=qwen3:8b
-dotnet run "Create a REST API endpoint for user management"
+dotnet run
 ```
 
 ### Autopilot Mode (experimental)
 
-Run the assistant as a self-improving loop: the agent picks an improvement to the project, implements it, then picks the next one — forever, until you press Ctrl+C.
+Run the assistant as a self-improving loop: the agent picks an improvement to the project, implements it, then picks the next one — forever, until you stop it.
 
 ```sh
 set AUTOPILOT=1
@@ -274,14 +264,14 @@ dotnet run -- --autopilot
 
 On PowerShell, use `$env:AUTOPILOT = "1"` instead of `set AUTOPILOT=1` (PowerShell's `set` does not set environment variables).
 
-Or type `/autopilot` in the interactive session. How it works:
+Or type `/autopilot` in the composer. How it works:
 
 - Each cycle runs the normal agent loop with a mission prompt ("pick the next highest-value improvement and implement it, never stop, never ask").
 - If the agent calls the **Question** tool, it is auto-answered with a message echoing the question/options and telling it to decide for itself — the loop never blocks on user input.
 - Build verification is disabled (the running process locks the build output, so `dotnet build` would fail with file-lock errors); the agent is instructed to never run build/test commands and to reason about correctness instead.
 - Changes are written to disk each cycle; they take effect only when the app is restarted. Undo history works per cycle, and git provides a fallback rollback.
 
-There are **no safety rails** — no iteration cap, no cost guard, no command denylist. Keep the console visible and be ready to press Ctrl+C.
+There are **no safety rails** — no iteration cap, no cost guard, no command denylist. Stop it with `/autopilot` again or the Stop button whenever you want.
 
 ### Slash Commands
 
@@ -291,7 +281,7 @@ Type these instead of a prompt to control the session:
 |---------|-------------|
 | `/undo` | Restore the most recent file change made by Write/Edit/ApplyPatch (or delete the file if it was created by the change). The model is informed of the rollback so its context stays accurate. |
 | `/history` | List the recorded file changes for this session, newest first. |
-| `/autopilot` | Enter autonomous mode: the agent keeps improving the project in an infinite loop (one improvement per cycle) until you press Ctrl+C. Question tool calls are auto-answered with "decide yourself and continue". |
+| `/autopilot` | Enter autonomous mode: the agent keeps improving the project in an infinite loop (one improvement per cycle) until you stop it (run `/autopilot` again or press the Stop button). Question tool calls are auto-answered with "decide yourself and continue". |
 | `/new`, `/reset` | Reset the conversation (also clears the undo history). |
 | `/exit`, `/quit` | Exit the assistant. |
 

@@ -33,8 +33,7 @@ public static class Configuration
         }
         catch (Exception ex)
         {
-            using (ConsoleStyler.WithColor(ConsoleColor.Red))
-                Console.Error.WriteLine($"Error loading .env file at {envPath}: {ex.Message}");
+            Diag.Log($"Error loading .env file at {envPath}: {ex.Message}");
         }
     }
 
@@ -319,15 +318,6 @@ public static class Configuration
     {
         var value = Environment.GetEnvironmentVariable("MAX_COMPACTION_TOKENS");
         return int.TryParse(value, out var result) && result > 0 ? result : 1200;
-    }
-
-    /// <summary>
-    /// Whether to print real per-request token usage and the calibration
-    /// factor after each model call (VERBOSE_CTX=1).
-    /// </summary>
-    public static bool GetVerboseCtx()
-    {
-        return Environment.GetEnvironmentVariable("VERBOSE_CTX") == "1";
     }
 
     public static string GetVerifyCommand()

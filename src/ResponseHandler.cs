@@ -70,7 +70,7 @@ public static class ResponseHandler
 
     internal static ToolChatMessage CreateErrorResult(ChatToolCall toolCall, string errorMessage)
     {
-        ConsoleStyler.WriteLine($"[tool error] {errorMessage}", ConsoleColor.Red, Console.Error);
+        Diag.Log("[tool error] " + errorMessage);
         return new ToolChatMessage(toolCall.Id, errorMessage);
     }
 

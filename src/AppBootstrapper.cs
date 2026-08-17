@@ -2,24 +2,6 @@ namespace TerminalAiAssistant;
 
 public static class AppBootstrapper
 {
-    public static string ResolveProviderId(Dictionary<string, ProviderConfig> providers)
-    {
-        var envProvider = Environment.GetEnvironmentVariable("AI_PROVIDER");
-        return envProvider != null && providers.ContainsKey(envProvider)
-            ? envProvider
-            : MenuHandler.SelectProvider(providers);
-    }
-
-    public static string ResolveModel(string providerId, ProviderConfig providerConfig)
-    {
-        var envModel = Environment.GetEnvironmentVariable("AI_MODEL");
-        if (!string.IsNullOrEmpty(envModel))
-        {
-            return envModel;
-        }
-        return MenuHandler.SelectModel(providerId, providerConfig);
-    }
-
     public sealed class CancelController
     {
         private CancellationTokenSource _cts = new();
@@ -28,7 +10,7 @@ public static class AppBootstrapper
         public CancellationToken Token => _cts.Token;
 
         /// <summary>
-        /// True once Ctrl+C has been pressed at least once. Autopilot mode
+        /// True once a stop has been requested at least once. Autopilot mode
         /// checks this between cycles to decide whether to keep going.
         /// </summary>
         public bool StopRequested => _cancelPressed;
@@ -45,20 +27,6 @@ public static class AppBootstrapper
         {
             _cancelPressed = true;
             _cts.Cancel();
-        }
-
-        public void RegisterCancelHandler()
-        {
-            Console.CancelKeyPress += (_, e) =>
-            {
-                if (_cancelPressed)
-                    return;
-
-                e.Cancel = true;
-                _cancelPressed = true;
-                Console.Error.WriteLine("\n[Interrupted] Cancelling...");
-                _cts.Cancel();
-            };
         }
     }
 }

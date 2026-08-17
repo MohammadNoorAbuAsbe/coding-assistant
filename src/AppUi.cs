@@ -79,8 +79,8 @@ public static class AppUi
     }
 
     /// <summary>
-    /// Asks the user a question through the attached UI (modal) or falls back
-    /// to the terminal prompt. The model resumes only once the user answers.
+    /// Asks the user a question through the attached UI (modal). Without a UI
+    /// there is no way to prompt, so the model gets a neutral non-answer.
     /// </summary>
     public static async Task<string> AskQuestionAsync(
         string id, string question, string? header,
@@ -99,7 +99,7 @@ public static class AppUi
             }
         }
 
-        return await QuestionHandler.AskUserAsync(question, header, options.ToList(), allowCustom, cancellationToken);
+        return "User did not provide an answer.";
     }
 
     /// <summary>Publishes the undo journal so the UI can render the Changes panel.

@@ -5,7 +5,7 @@ namespace TerminalAiAssistant;
 /// cycle: after each completed improvement, the agent is prompted to pick the
 /// next one and continue. It never stops and never asks the user — Question
 /// tool calls are auto-answered telling it to decide for itself. Stopped only
-/// by the user (Ctrl+C).
+/// by the user (via the desktop UI).
 /// </summary>
 public static class Autopilot
 {
@@ -44,10 +44,6 @@ Rules:
         bool forceChangeNextCycle = false;
         try
         {
-            using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
-                await Console.Error.WriteLineAsync("[Autopilot] Autonomous mode started. The agent will keep improving the project until you press Ctrl+C.");
-            using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
-                await Console.Error.WriteLineAsync("[Autopilot] Changes apply to the source on disk; the running process keeps executing the old code until you restart.");
             AppUi.Send("autopilot", new { active = true, cycle = 0, message = "Autonomous mode started — the agent keeps improving the project until stopped." });
 
             while (true)
@@ -56,8 +52,6 @@ Rules:
                     break;
 
                 cycle++;
-                using (ConsoleStyler.WithColor(ConsoleColor.Cyan))
-                    await Console.Error.WriteLineAsync($"\n================ Autopilot cycle {cycle} ================");
                 AppUi.Send("autopilot", new { active = true, cycle, message = $"Autopilot cycle {cycle}" });
 
                 int journalCount = session.Undo.List().Count;
@@ -68,29 +62,12 @@ Rules:
 
                 if (cancelController.StopRequested)
                 {
-                    using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
-                        await Console.Error.WriteLineAsync("\n[Autopilot] Stopped by user.");
                     AppUi.Send("autopilot", new { active = false, cycle, message = "Autopilot stopped by user." });
                     break;
                 }
 
                 var changes = session.Undo.List().Take(Math.Max(0, session.Undo.List().Count - journalCount)).ToList();
                 forceChangeNextCycle = changes.Count == 0;
-                if (changes.Count == 0)
-                {
-                    using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
-                        await Console.Error.WriteLineAsync($"[Autopilot] Cycle {cycle} complete — no files changed. Next cycle will be forced to make a change.");
-                }
-                else
-                {
-                    using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
-                        await Console.Error.WriteLineAsync($"[Autopilot] Cycle {cycle} complete — {changes.Count} change(s):");
-                    foreach (var entry in changes)
-                    {
-                        using (ConsoleStyler.WithColor(entry.ExistedBefore ? ConsoleColor.Green : ConsoleColor.Yellow))
-                            await Console.Error.WriteLineAsync($"  - {entry.FullPath} ({entry.ToolName})");
-                    }
-                }
             }
         }
         finally
@@ -98,8 +75,6 @@ Rules:
             _isActive = false;
         }
 
-        using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
-            await Console.Error.WriteLineAsync($"[Autopilot] Session ended after {cycle} cycle(s). Changes are on disk — restart the app to run them.");
         AppUi.Send("autopilot", new { active = false, cycle, message = $"Autopilot ended after {cycle} cycle(s)." });
     }
 }

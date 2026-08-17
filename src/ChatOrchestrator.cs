@@ -33,12 +33,6 @@ public static class ChatOrchestrator
         if (!session.SessionStarted)
         {
             session.Messages = [new SystemChatMessage(SystemPrompt.GetPrompt(provider))];
-            using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
-            {
-                var ctxSource = Configuration.GetContextWindowSource();
-                var ctxLabel = ctxSource == null ? $"{contextWindowSize}" : $"{contextWindowSize} ({ctxSource})";
-                await Console.Error.WriteLineAsync($"  ⚡ [NEURAL LINK] {provider} · {Configuration.GetModel()} · ctx={ctxLabel} · max_iter={maxIterations?.ToString() ?? "unlimited"}");
-            }
             AppUi.Send("meta", new
             {
                 provider,
@@ -75,10 +69,6 @@ public static class ChatOrchestrator
             if (cancellationToken.IsCancellationRequested)
                 break;
 
-            using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
-                await Console.Error.WriteLineAsync(maxIterations == null
-                    ? $"  ⚡ [Sub-Agent Iteration {iteration + 1}]"
-                    : $"  ⚡ [Sub-Agent {iteration + 1}/{maxIterations}]");
             AppUi.Send("subagent", new { active = true, iteration = iteration + 1 });
 
             var (accumulatedToolCalls, responseContent) = await FetchWithEmptyResponseRetryAsync(client, messages, options, cancellationToken);
@@ -87,14 +77,12 @@ public static class ChatOrchestrator
             {
                 if (!string.IsNullOrEmpty(responseContent))
                 {
-                    Console.WriteLine();
                     messages.Add(new AssistantChatMessage(responseContent));
                     finalResponse = responseContent;
                 }
                 break;
             }
 
-            await Console.Error.WriteLineAsync();
             messages = await FinalizeToolCallsAsync(accumulatedToolCalls, messages, contextWindowSize, cancellationToken);
         }
 
@@ -119,14 +107,11 @@ public static class ChatOrchestrator
         {
             if (cancellationToken.IsCancellationRequested)
             {
-                using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
-                    await Console.Error.WriteLineAsync("\n  ⚠️ [Neural Link Cancelled]");
                 AppUi.Send("status", new { message = "Operation cancelled" });
                 break;
             }
 
             AppUi.Send("iter", new { n = iteration + 1, max = maxIterations });
-            NeuralSpinner.RenderThoughtHeader(iteration + 1, maxIterations);
 
             var (accumulatedToolCalls, responseContent) = await FetchWithEmptyResponseRetryAsync(client, messages, options, cancellationToken);
 
@@ -134,8 +119,6 @@ public static class ChatOrchestrator
             {
                 if (!string.IsNullOrEmpty(responseContent))
                 {
-                    Console.WriteLine();
-
                     if (ShouldNudge(responseContent, messages, iteration, maxIterations, skippedEditNudges))
                     {
                         skippedEditNudges++;
@@ -149,7 +132,6 @@ public static class ChatOrchestrator
                 break;
             }
 
-            await Console.Error.WriteLineAsync();
             messages = await FinalizeToolCallsAsync(accumulatedToolCalls, messages, contextWindowSize, cancellationToken);
 
             if (Autopilot.IsActive)
@@ -163,8 +145,6 @@ public static class ChatOrchestrator
                 else if (turnsSinceFileChange >= MaxDecisionTurns)
                 {
                     turnsSinceFileChange = 0;
-                    using (ConsoleStyler.WithColor(ConsoleColor.Yellow))
-                        await Console.Error.WriteLineAsync("\n  ⚡ [Autopilot Directive] Quantum equilibrium reached; injecting swarm directive.");
                     AppUi.Send("status", new { message = "No changes recently — injecting autopilot directive" });
                     messages.Add(new UserChatMessage(AutopilotSuggestions.BuildDirective()));
                 }
@@ -179,15 +159,11 @@ public static class ChatOrchestrator
                 stallInterventions++;
                 if (stallInterventions >= MaxStallInterventions)
                 {
-                    using (ConsoleStyler.WithColor(ConsoleColor.Yellow))
-                        await Console.Error.WriteLineAsync("\n  ⚠️ [Neural Loop Detected] Terminating repeated resonance loop.");
                     AppUi.Send("error", new { message = "Loop detected — stopped after repeated identical tool calls" });
                     messages.Add(new UserChatMessage("You are stuck in a repeating tool-call loop and have ignored prior warnings. STOP calling tools. End your turn now with a short summary of what you accomplished (or state that nothing was accomplished)."));
                     break;
                 }
 
-                using (ConsoleStyler.WithColor(ConsoleColor.Yellow))
-                    await Console.Error.WriteLineAsync("\n  ⚠️ [Neural Loop Detected] Breaking repetition pattern; re-orienting vector.");
                 AppUi.Send("status", new { message = "Loop detected — breaking repetition pattern" });
                 messages.Add(stallInterventions == 1
                     ? new UserChatMessage("You are repeating the same tool call. Stop this loop immediately: Read the relevant file fresh (a wide range), fix the problem correctly with a single Edit or ApplyPatch, or abandon it and move on to a different task. Do NOT issue this exact tool call again.")
@@ -201,9 +177,6 @@ public static class ChatOrchestrator
     {
         var accumulatedToolCalls = new Dictionary<int, ToolCallAccumulator>();
         string? responseContent = null;
-        var lineBuffer = new StringBuilder();
-        bool inCodeBlock = false;
-        bool reasoningOnLine = false;
         ChatTokenUsage? usage = null;
         var uiStream = new StringBuilder();
         var uiReasoning = new StringBuilder();
@@ -213,8 +186,8 @@ public static class ChatOrchestrator
         {
             await foreach (var update in ChatService.GetCompletionStreaming(client, messages, options, cancellationToken))
             {
-                DrainReasoning(ref reasoningOnLine, uiReasoning);
-                ProcessContentUpdate(update.ContentUpdate, ref responseContent, lineBuffer, ref inCodeBlock, ref reasoningOnLine, uiStream);
+                DrainReasoning(uiReasoning);
+                ProcessContentUpdate(update.ContentUpdate, ref responseContent, uiStream);
                 ProcessToolCallUpdates(update.ToolCallUpdates, accumulatedToolCalls);
                 if (update.Usage != null)
                 {
@@ -247,7 +220,7 @@ public static class ChatOrchestrator
             }
         }
 
-        DrainReasoning(ref reasoningOnLine, uiReasoning);
+        DrainReasoning(uiReasoning);
         FlushUi(uiStream, uiReasoning);
 
         if (usage != null)
@@ -261,25 +234,11 @@ public static class ChatOrchestrator
                 output = usage.OutputTokenCount,
                 context = Configuration.GetContextWindowSize()
             });
-            if (Configuration.GetVerboseCtx())
-            {
-                using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
-                    await Console.Error.WriteLineAsync($"  ⚡ [Neural Telemetry] {usage.InputTokenCount:N0} tokens in · {usage.OutputTokenCount:N0} tokens out");
-            }
         }
 
         if (responseContent == null && accumulatedToolCalls.Count == 0)
         {
             throw new EmptyResponseException();
-        }
-
-        if (lineBuffer.Length > 0)
-        {
-            string remaining = lineBuffer.ToString();
-            string rendered = AnsiRenderer.Render(remaining, ref inCodeBlock);
-            Console.Write(rendered);
-            await Console.Out.FlushAsync(cancellationToken);
-            lineBuffer.Clear();
         }
 
         return (accumulatedToolCalls, responseContent);
@@ -306,8 +265,6 @@ public static class ChatOrchestrator
                     return (new Dictionary<int, ToolCallAccumulator>(), error);
                 }
 
-                using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
-                    await Console.Error.WriteLineAsync($"    ⚡ [Neural Re-Sync] Empty transmission received — retrying ({attempt + 1}/{EmptyResponseMaxRetries})...");
                 AppUi.Send("status", new { message = $"Empty response — retrying ({attempt + 1}/{EmptyResponseMaxRetries})" });
                 try
                 {
@@ -327,63 +284,26 @@ public static class ChatOrchestrator
     {
     }
 
-    private static void ProcessContentUpdate(IList<ChatMessageContentPart>? contentUpdate, ref string? responseContent, StringBuilder lineBuffer, ref bool inCodeBlock, ref bool reasoningOnLine, StringBuilder uiStream)
+    private static void ProcessContentUpdate(IList<ChatMessageContentPart>? contentUpdate, ref string? responseContent, StringBuilder uiStream)
     {
         if (contentUpdate == null)
             return;
 
         foreach (var text in contentUpdate.Where(p => !string.IsNullOrEmpty(p.Text)).Select(p => p.Text))
         {
-            if (reasoningOnLine)
-            {
-                reasoningOnLine = false;
-                Console.Error.WriteLine();
-                Console.Error.Flush();
-            }
-
             responseContent = (responseContent ?? "") + text;
             uiStream.Append(text);
-            lineBuffer.Append(text);
-
-            string buf = lineBuffer.ToString();
-            int lastNewline = buf.LastIndexOf('\n');
-            if (lastNewline >= 0)
-            {
-                string completeLines = buf[..lastNewline];
-                lineBuffer.Clear();
-                lineBuffer.Append(buf[(lastNewline + 1)..]);
-
-                foreach (var line in completeLines.Split('\n'))
-                {
-                    string rendered = AnsiRenderer.Render(line, ref inCodeBlock);
-                    Console.WriteLine(rendered);
-                }
-                Console.Out.Flush();
-            }
         }
     }
 
-    private static void DrainReasoning(ref bool reasoningOnLine, StringBuilder uiReasoning)
+    private static void DrainReasoning(StringBuilder uiReasoning)
     {
         if (!ReasoningTapPolicy.Enabled)
             return;
 
         while (ReasoningTapPolicy.Pending.TryDequeue(out string? fragment))
         {
-            /*if (!reasoningOnLine)
-            {
-                using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
-                    Console.Error.Write("  │ 🔮 ");
-                reasoningOnLine = true;
-            }*/
-            using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
-                Console.Error.Write(fragment);
             uiReasoning.Append(fragment);
-        }
-        if (reasoningOnLine)
-        {
-            Console.Error.WriteLine();
-            Console.Error.Flush();
         }
     }
 
@@ -473,29 +393,12 @@ public static class ChatOrchestrator
         {
             acc.Arguments += toolUpdate.FunctionArgumentsUpdate.ToString();
             AppUi.Send("tool:args", new { id = $"call-{index}", args = toolUpdate.FunctionArgumentsUpdate.ToString() });
-            if (!acc.ArgDisplayed)
-            {
-                string? primaryArg = ExtractPrimaryArg(acc.FunctionName, acc.Arguments);
-                if (primaryArg != null)
-                {
-                    acc.ArgDisplayed = true;
-                    using (ConsoleStyler.WithColor(ConsoleColor.White))
-                        Console.Error.Write($"[{primaryArg}]");
-                    Console.Error.Flush();
-                }
-            }
         }
     }
 
     private static void DisplayToolName(string functionName, int index)
     {
         AppUi.Send("tool:start", new { id = $"call-{index}", name = functionName });
-        using (ConsoleStyler.WithColor(ConsoleColor.Cyan))
-            Console.Error.Write($"\n  ⚙  [QUANTUM TOOL EXECUTION] ");
-        using (ConsoleStyler.WithColor(ConsoleColor.Yellow))
-            Console.Error.Write($"⚡ {functionName} ");
-        using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
-            Console.Error.Write("→ ");
     }
 
     internal static string? ExtractPrimaryArg(string functionName, string json)
@@ -538,9 +441,6 @@ public static class ChatOrchestrator
 
         messages.Add(new AssistantChatMessage(assistantToolCalls));
 
-        using (ConsoleStyler.WithColor(ConsoleColor.Cyan))
-            await Console.Error.WriteLineAsync("\n  ╭── 📊 EXECUTION TELEMETRY ──────────────────────────────────────────────╮");
-        
         var toolResultMessages = new List<ChatMessage>();
         for (int i = 0; i < assistantToolCalls.Count; i++)
         {
@@ -552,7 +452,6 @@ public static class ChatOrchestrator
                 LogToolResult(toolCall, result, i);
             }
         }
-        await Console.Error.WriteLineAsync("  ╰────────────────────────────────────────────────────────────────────────╯");
 
         messages.AddRange(toolResultMessages);
 
@@ -566,13 +465,7 @@ public static class ChatOrchestrator
 
         string content = ContextManager.ExtractText(toolMsg.Content);
         bool isError = content.StartsWith("Error:");
-        string? primaryArg = ExtractPrimaryArg(toolCall.FunctionName, toolCall.FunctionArguments?.ToString() ?? "");
         string fullArgs = toolCall.FunctionArguments?.ToString() ?? "";
-
-        string argsDisplay = !string.IsNullOrEmpty(primaryArg) ? primaryArg : "(no args)";
-        string resultSummary = $"{ContextManager.EstimateTokens(content):N0} tokens";
-
-        UiStyler2026.RenderToolExecutionDetail(toolCall.FunctionName, argsDisplay, resultSummary, isError, content);
 
         AppUi.Send("tool:end", new
         {
@@ -627,9 +520,6 @@ public static class ChatOrchestrator
     private static async Task DisplayErrorAsync(string message)
     {
         AppUi.Send("error", new { message });
-        await Console.Out.WriteLineAsync();
-        using (ConsoleStyler.WithColor(ConsoleColor.Red))
-            await Console.Error.WriteLineAsync($"  ❌ [NEURAL ERROR] {message}");
     }
 
     private static string FormatApiError(ClientResultException ex)
@@ -682,7 +572,7 @@ public static class ChatOrchestrator
         }
         catch (System.Exception ex)
         {
-            Console.Error.WriteLine($"Failed to parse error message from API response: {ex.Message}");
+            Diag.Log($"Failed to parse error message from API response: {ex.Message}");
         }
         return null;
     }
@@ -756,7 +646,6 @@ public class ToolCallAccumulator
     public string FunctionName { get; set; } = "";
     public string Arguments { get; set; } = "";
     public BinaryData? ExtraContent { get; set; }
-    public bool ArgDisplayed { get; set; }
     public bool ArgsLogged { get; set; }
 }
 

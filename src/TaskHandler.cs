@@ -73,13 +73,7 @@ You are a coding assistant sub-agent working on a specific task delegated by the
             new UserChatMessage(description)
         };
 
-        using (ConsoleStyler.WithColor(ConsoleColor.Cyan))
-            await Console.Error.WriteLineAsync($"\n[Sub-agent launched]");
-
         var result = await ChatOrchestrator.RunSubAgent(client, messages, maxIterations, contextWindowSize, cancellationToken);
-
-        using (ConsoleStyler.WithColor(ConsoleColor.Cyan))
-            await Console.Error.WriteLineAsync($"[Sub-agent finished]");
 
         return new ToolChatMessage(parentToolCall.Id, result);
     }
