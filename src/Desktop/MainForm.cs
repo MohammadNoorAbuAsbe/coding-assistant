@@ -31,7 +31,7 @@ internal sealed class MainForm : Form
     {
         Text = "Coding Assistant";
         FormBorderStyle = FormBorderStyle.None;
-        BackColor = Color.FromArgb(11, 13, 16);
+        BackColor = Color.FromArgb(20, 21, 22);
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(900, 600);
         Size = new Size(1360, 860);
@@ -51,7 +51,7 @@ internal sealed class MainForm : Form
             Text = "Coding Assistant",
             AutoSize = false,
             TextAlign = ContentAlignment.MiddleLeft,
-            ForeColor = Color.FromArgb(148, 163, 184),
+            ForeColor = Color.FromArgb(233, 231, 228),
             Font = new Font("Segoe UI Variable", 9.5F, FontStyle.Bold),
             Padding = new Padding(14, 0, 0, 0),
             Size = new Size(170, TitleBarHeight),
@@ -115,7 +115,7 @@ internal sealed class MainForm : Form
         {
             Dock = DockStyle.Top,
             Height = TitleBarHeight,
-            BackColor = Color.FromArgb(13, 16, 21)
+            BackColor = Color.FromArgb(45, 45, 47)
         };
         return bar;
     }
@@ -151,11 +151,11 @@ internal sealed class MainForm : Form
         b.FlatAppearance.BorderSize = 0;
         b.FlatAppearance.MouseOverBackColor = isClose
             ? Color.FromArgb(196, 43, 28)
-            : Color.FromArgb(30, 41, 59);
+            : Color.FromArgb(82, 150, 50);
         b.FlatAppearance.MouseDownBackColor = isClose
             ? Color.FromArgb(185, 28, 28)
-            : Color.FromArgb(15, 23, 42);
-        b.ForeColor = Color.FromArgb(203, 213, 225);
+            : Color.FromArgb(45, 45, 47);
+        b.ForeColor = Color.FromArgb(233, 231, 228);
         b.Font = new Font("Segoe UI Variable", 11F, FontStyle.Regular);
         b.TextAlign = ContentAlignment.MiddleCenter;
         b.TabStop = false;
@@ -190,8 +190,8 @@ internal sealed class MainForm : Form
             tab.Location = new Point(x, (TitleBarHeight - TabHeight) / 2);
             tab.FlatAppearance.BorderSize = 0;
             bool isActive = id == _router.ActiveTabId;
-            tab.BackColor = isActive ? Color.FromArgb(24, 30, 41) : Color.Transparent;
-            tab.ForeColor = isActive ? Color.FromArgb(226, 232, 240) : Color.FromArgb(120, 135, 155);
+            tab.BackColor = isActive ? Color.FromArgb(45, 45, 47) : Color.Transparent;
+            tab.ForeColor = isActive ? Color.FromArgb(233, 231, 228) : Color.FromArgb(140, 138, 135);
             tab.Font = new Font("Segoe UI Variable", 9F, isActive ? FontStyle.Bold : FontStyle.Regular);
             tab.Click += (_, _) =>
             {
@@ -258,7 +258,7 @@ internal sealed class MainForm : Form
             _web.CoreWebView2.SetVirtualHostNameToFolderMapping(
                 HostName, webRoot, CoreWebView2HostResourceAccessKind.Allow);
 
-            _web.DefaultBackgroundColor = Color.FromArgb(11, 13, 16);
+            _web.DefaultBackgroundColor = Color.FromArgb(20, 21, 22);
             _web.CoreWebView2.WebMessageReceived += (_, e) =>
             {
                 try

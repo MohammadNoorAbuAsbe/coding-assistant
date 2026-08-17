@@ -10,12 +10,13 @@ public enum UiTheme
     Dracula,
     Neon,
     Sunset,
-    Minimalist
+    Minimalist,
+    Custom
 }
 
 public static class ThemeManager
 {
-    private static UiTheme _currentTheme = UiTheme.Cyberpunk;
+    private static UiTheme _currentTheme = UiTheme.Custom;
 
     public static UiTheme CurrentTheme
     {
@@ -41,6 +42,7 @@ public static class ThemeManager
         UiTheme.Neon => ConsoleColor.Yellow,
         UiTheme.Sunset => ConsoleColor.DarkYellow,
         UiTheme.Minimalist => ConsoleColor.White,
+        UiTheme.Custom => ConsoleColor.Green,
         _ => ConsoleColor.Cyan
     };
 
@@ -53,6 +55,7 @@ public static class ThemeManager
         UiTheme.Neon => ConsoleColor.Cyan,
         UiTheme.Sunset => ConsoleColor.Red,
         UiTheme.Minimalist => ConsoleColor.DarkGray,
+        UiTheme.Custom => ConsoleColor.DarkGreen,
         _ => ConsoleColor.Magenta
     };
 
@@ -65,6 +68,7 @@ public static class ThemeManager
         UiTheme.Neon => ConsoleColor.Green,
         UiTheme.Sunset => ConsoleColor.Yellow,
         UiTheme.Minimalist => ConsoleColor.Gray,
+        UiTheme.Custom => ConsoleColor.Yellow,
         _ => ConsoleColor.Yellow
     };
 
@@ -77,6 +81,7 @@ public static class ThemeManager
         UiTheme.Neon => ConsoleColor.DarkYellow,
         UiTheme.Sunset => ConsoleColor.DarkRed,
         UiTheme.Minimalist => ConsoleColor.DarkGray,
+        UiTheme.Custom => ConsoleColor.DarkGreen,
         _ => ConsoleColor.DarkCyan
     };
 
@@ -91,6 +96,7 @@ public static class ThemeManager
         UiTheme.Neon => "Cyber Neon",
         UiTheme.Sunset => "Solar Sunset",
         UiTheme.Minimalist => "Clean Minimalist",
+        UiTheme.Custom => "Custom Palette",
         _ => "Cyberpunk Neon"
     };
 
