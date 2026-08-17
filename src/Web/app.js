@@ -429,22 +429,18 @@ function renderStreamNow(turn) {
 function startReasoning(turn) {
   if (turn.reasoningEl) return;
   const block = document.createElement('div');
-  block.className = 'reasoning';
+  block.className = 'reasoning open';
   block.innerHTML =
-    '<button class="reasoning-head"><span class="reasoning-toggle">' + I('caret') + '</span>' +
-    '<span class="reasoning-label">Thinking</span><span class="reasoning-dots">' + I('circle') + '</span></button>' +
+    '<button class="reasoning-head"><span class="chev">' + I('caret') + '</span>' +
+    '<span class="reasoning-label">Thinking</span><span class="pulse"></span></button>' +
     '<div class="reasoning-body"></div>';
   turn.body.insertBefore(block, turn.body.firstChild);
   turn.reasoningEl = block;
   turn.reasoningBody = block.querySelector('.reasoning-body');
-  turn.reasoningDots = block.querySelector('.reasoning-dots');
   turn.reasoningOpen = true;
-  block.querySelector('.reasoning-toggle').style.transform = 'rotate(90deg)';
   block.querySelector('.reasoning-head').addEventListener('click', () => {
     turn.reasoningOpen = !turn.reasoningOpen;
-    turn.reasoningBody.classList.toggle('hidden', !turn.reasoningOpen);
-    block.querySelector('.reasoning-toggle').style.transform =
-      turn.reasoningOpen ? 'rotate(90deg)' : '';
+    block.classList.toggle('open', turn.reasoningOpen);
   });
 }
 
@@ -458,7 +454,7 @@ function appendReasoning(text) {
 function endReasoning() {
   const turn = state.activeTurn;
   if (turn && turn.reasoningEl) {
-    turn.reasoningEl.querySelector('.reasoning-dots').remove();
+    turn.reasoningEl.querySelector('.pulse').remove();
     const label = turn.reasoningEl.querySelector('.reasoning-label');
     label.textContent = 'Thought for ' + fmtTime(Date.now());
   }
