@@ -205,18 +205,22 @@ public static class ChatOrchestrator
         bool inCodeBlock = false;
         bool reasoningOnLine = false;
         ChatTokenUsage? usage = null;
+        var uiStream = new StringBuilder();
+        var uiReasoning = new StringBuilder();
+        var lastUiFlush = DateTime.UtcNow;
 
         try
         {
             await foreach (var update in ChatService.GetCompletionStreaming(client, messages, options, cancellationToken))
             {
-                DrainReasoning(ref reasoningOnLine);
-                ProcessContentUpdate(update.ContentUpdate, ref responseContent, lineBuffer, ref inCodeBlock, ref reasoningOnLine);
+                DrainReasoning(ref reasoningOnLine, uiReasoning);
+                ProcessContentUpdate(update.ContentUpdate, ref responseContent, lineBuffer, ref inCodeBlock, ref reasoningOnLine, uiStream);
                 ProcessToolCallUpdates(update.ToolCallUpdates, accumulatedToolCalls);
                 if (update.Usage != null)
                 {
                     usage = update.Usage;
                 }
+                TryFlushUi(uiStream, uiReasoning, ref lastUiFlush);
             }
         }
         catch (ArgumentOutOfRangeException) when (responseContent == null)
@@ -243,7 +247,8 @@ public static class ChatOrchestrator
             }
         }
 
-        DrainReasoning(ref reasoningOnLine);
+        DrainReasoning(ref reasoningOnLine, uiReasoning);
+        FlushUi(uiStream, uiReasoning);
 
         if (usage != null)
         {
@@ -322,7 +327,7 @@ public static class ChatOrchestrator
     {
     }
 
-    private static void ProcessContentUpdate(IList<ChatMessageContentPart>? contentUpdate, ref string? responseContent, StringBuilder lineBuffer, ref bool inCodeBlock, ref bool reasoningOnLine)
+    private static void ProcessContentUpdate(IList<ChatMessageContentPart>? contentUpdate, ref string? responseContent, StringBuilder lineBuffer, ref bool inCodeBlock, ref bool reasoningOnLine, StringBuilder uiStream)
     {
         if (contentUpdate == null)
             return;
@@ -337,7 +342,7 @@ public static class ChatOrchestrator
             }
 
             responseContent = (responseContent ?? "") + text;
-            AppUi.Send("stream", new { text });
+            uiStream.Append(text);
             lineBuffer.Append(text);
 
             string buf = lineBuffer.ToString();
@@ -358,7 +363,7 @@ public static class ChatOrchestrator
         }
     }
 
-    private static void DrainReasoning(ref bool reasoningOnLine)
+    private static void DrainReasoning(ref bool reasoningOnLine, StringBuilder uiReasoning)
     {
         if (!ReasoningTapPolicy.Enabled)
             return;
@@ -373,12 +378,49 @@ public static class ChatOrchestrator
             }*/
             using (ConsoleStyler.WithColor(ConsoleColor.DarkGray))
                 Console.Error.Write(fragment);
-            AppUi.Send("reasoning", new { text = fragment });
+            uiReasoning.Append(fragment);
         }
         if (reasoningOnLine)
         {
             Console.Error.WriteLine();
             Console.Error.Flush();
+        }
+    }
+
+    private const double UiFlushIntervalMs = 60;
+    private const int UiFlushMaxChars = 4096;
+
+    /// <summary>
+    /// Coalesces the per-token stream/reasoning event flood into batches so
+    /// the UI renders in real time instead of drowning in tens of thousands
+    /// of tiny messages. Flushes when the interval elapsed or a buffer grew
+    /// large enough, whichever comes first.
+    /// </summary>
+    private static void TryFlushUi(StringBuilder streamBuffer, StringBuilder reasoningBuffer, ref DateTime lastFlush)
+    {
+        if (streamBuffer.Length == 0 && reasoningBuffer.Length == 0)
+            return;
+
+        bool intervalElapsed = (DateTime.UtcNow - lastFlush).TotalMilliseconds >= UiFlushIntervalMs;
+        bool large = streamBuffer.Length >= UiFlushMaxChars || reasoningBuffer.Length >= UiFlushMaxChars;
+        if (!intervalElapsed && !large)
+            return;
+
+        FlushUi(streamBuffer, reasoningBuffer);
+        lastFlush = DateTime.UtcNow;
+    }
+
+    private static void FlushUi(StringBuilder streamBuffer, StringBuilder reasoningBuffer)
+    {
+        if (streamBuffer.Length > 0)
+        {
+            AppUi.Send("stream", new { text = streamBuffer.ToString() });
+            streamBuffer.Clear();
+        }
+        if (reasoningBuffer.Length > 0)
+        {
+            AppUi.Send("reasoning", new { text = reasoningBuffer.ToString() });
+            reasoningBuffer.Clear();
         }
     }
 

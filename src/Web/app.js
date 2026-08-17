@@ -390,7 +390,24 @@ function appendStream(text, render) {
     turn.content.appendChild(turn.mdEl);
   }
   turn.streamed += text;
-  turn.mdEl.innerHTML = render ? renderMarkdown(turn.streamed) : escapeHtml(turn.streamed);
+  turn.renderMode = render;
+  scheduleStreamRender(turn);
+}
+
+// Re-rendering the whole accumulated markdown on every token drowns the
+// renderer (marked + highlight.js per chunk), so the UI freezes and the
+// response appears only at the end. Debounce to a few renders per second.
+function scheduleStreamRender(turn) {
+  if (turn.renderTimer) clearTimeout(turn.renderTimer);
+  turn.renderTimer = setTimeout(() => {
+    turn.renderTimer = null;
+    renderStreamNow(turn);
+  }, 80);
+}
+
+function renderStreamNow(turn) {
+  if (!turn || !turn.mdEl) return;
+  turn.mdEl.innerHTML = turn.renderMode ? renderMarkdown(turn.streamed) : escapeHtml(turn.streamed);
   turn.mdEl.querySelectorAll('pre code').forEach(b => {
     if (b.dataset.hl !== '1') {
       b.dataset.hl = '1';
@@ -435,8 +452,7 @@ function appendReasoning(text) {
   const turn = state.activeTurn;
   if (!turn) return;
   startReasoning(turn);
-  turn.reasoningText = (turn.reasoningText || '') + text;
-  turn.reasoningBody.textContent = turn.reasoningText;
+  turn.reasoningBody.appendChild(document.createTextNode(text));
 }
 
 function endReasoning() {
@@ -526,6 +542,13 @@ function finishTurn() {
   if (!turn) return;
   if (turn.streamed === undefined && !turn.reasoningEl && turn.tools.size === 0 && !turn.error) {
     turn.content.innerHTML = '<div class="empty-stream">The model returned an empty response.</div>';
+  }
+  if (turn.streamed !== undefined) {
+    if (turn.renderTimer) {
+      clearTimeout(turn.renderTimer);
+      turn.renderTimer = null;
+    }
+    renderStreamNow(turn);
   }
   endReasoning();
   renderTurnMeta(turn);
