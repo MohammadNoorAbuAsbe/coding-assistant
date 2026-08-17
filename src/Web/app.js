@@ -338,9 +338,7 @@ function newTurn() {
     el: null,
     row: null,
     body: null,
-    content: null,
-    reasoning: null,
-    reasoningOpen: false,
+    blocks: [],
     tools: new Map(),
     meta: null,
     lastIter: null,
@@ -354,19 +352,29 @@ function newTurn() {
     '<div class="msg-body"></div>';
   const body = row.querySelector('.msg-body');
 
-  const content = document.createElement('div');
-  content.className = 'content';
-  body.appendChild(content);
-
   turn.el = row;
   turn.row = row;
   turn.body = body;
-  turn.content = content;
   els.messages.appendChild(row);
 
   state.activeTurn = turn;
   scrollBottom(true);
   return turn;
+}
+
+function appendBlock(turn, kind) {
+  const el = document.createElement('div');
+  el.className = kind === 'reasoning' ? 'reasoning' : 'content';
+  turn.body.appendChild(el);
+  const block = { kind, el };
+  turn.blocks.push(block);
+  return block;
+}
+
+function blockFor(turn, kind) {
+  const last = turn.blocks[turn.blocks.length - 1];
+  if (last && last.kind === kind) return last;
+  return kind === 'reasoning' ? startReasoning(turn) : appendBlock(turn, 'text');
 }
 
 function spinner() {
@@ -379,42 +387,39 @@ function spinner() {
 function appendStream(text, render) {
   const turn = state.activeTurn;
   if (!turn) return;
-  if (turn.content.querySelector('.empty-stream')) {
-    turn.content.querySelector('.empty-stream').remove();
+  const block = blockFor(turn, 'text');
+  if (!block.mdEl) {
+    block.el.innerHTML = '';
+    block.mdEl = document.createElement('div');
+    block.mdEl.className = 'md';
+    block.el.appendChild(block.mdEl);
   }
-  if (turn.streamed === undefined) {
-    turn.streamed = '';
-    turn.content.innerHTML = '';
-    turn.mdEl = document.createElement('div');
-    turn.mdEl.className = 'md';
-    turn.content.appendChild(turn.mdEl);
-  }
-  turn.streamed += text;
-  turn.renderMode = render;
-  scheduleStreamRender(turn);
+  block.streamed = (block.streamed || '') + text;
+  block.renderMode = render;
+  scheduleStreamRender(block);
 }
 
 // Re-rendering the whole accumulated markdown on every token drowns the
 // renderer (marked + highlight.js per chunk), so the UI freezes and the
 // response appears only at the end. Debounce to a few renders per second.
-function scheduleStreamRender(turn) {
-  if (turn.renderTimer) clearTimeout(turn.renderTimer);
-  turn.renderTimer = setTimeout(() => {
-    turn.renderTimer = null;
-    renderStreamNow(turn);
+function scheduleStreamRender(block) {
+  if (block.renderTimer) clearTimeout(block.renderTimer);
+  block.renderTimer = setTimeout(() => {
+    block.renderTimer = null;
+    renderStreamNow(block);
   }, 80);
 }
 
-function renderStreamNow(turn) {
-  if (!turn || !turn.mdEl) return;
-  turn.mdEl.innerHTML = turn.renderMode ? renderMarkdown(turn.streamed) : escapeHtml(turn.streamed);
-  turn.mdEl.querySelectorAll('pre code').forEach(b => {
+function renderStreamNow(block) {
+  if (!block || !block.mdEl) return;
+  block.mdEl.innerHTML = block.renderMode ? renderMarkdown(block.streamed) : escapeHtml(block.streamed);
+  block.mdEl.querySelectorAll('pre code').forEach(b => {
     if (b.dataset.hl !== '1') {
       b.dataset.hl = '1';
       try { hljs.highlightElement(b); } catch (e) { /* noop */ }
     }
   });
-  turn.mdEl.querySelectorAll('a[data-link]').forEach(a => {
+  block.mdEl.querySelectorAll('a[data-link]').forEach(a => {
     if (!a.dataset.bound) {
       a.dataset.bound = '1';
       a.addEventListener('click', e => {
@@ -427,37 +432,34 @@ function renderStreamNow(turn) {
 }
 
 function startReasoning(turn) {
-  if (turn.reasoningEl) return;
-  const block = document.createElement('div');
-  block.className = 'reasoning open';
-  block.innerHTML =
+  const block = appendBlock(turn, 'reasoning');
+  block.el.className = 'reasoning open';
+  block.el.innerHTML =
     '<button class="reasoning-head"><span class="chev">' + I('caret') + '</span>' +
     '<span class="reasoning-label">Thinking</span><span class="pulse"></span></button>' +
     '<div class="reasoning-body"></div>';
-  turn.body.insertBefore(block, turn.body.firstChild);
-  turn.reasoningEl = block;
-  turn.reasoningBody = block.querySelector('.reasoning-body');
-  turn.reasoningOpen = true;
-  block.querySelector('.reasoning-head').addEventListener('click', () => {
-    turn.reasoningOpen = !turn.reasoningOpen;
-    block.classList.toggle('open', turn.reasoningOpen);
+  block.bodyEl = block.el.querySelector('.reasoning-body');
+  block.open = true;
+  block.el.querySelector('.reasoning-head').addEventListener('click', () => {
+    block.open = !block.open;
+    block.el.classList.toggle('open', block.open);
   });
+  return block;
 }
 
 function appendReasoning(text) {
   const turn = state.activeTurn;
   if (!turn) return;
-  startReasoning(turn);
-  turn.reasoningBody.appendChild(document.createTextNode(text));
+  const block = blockFor(turn, 'reasoning');
+  block.bodyEl.appendChild(document.createTextNode(text));
 }
 
-function endReasoning() {
-  const turn = state.activeTurn;
-  if (turn && turn.reasoningEl) {
-    turn.reasoningEl.querySelector('.pulse').remove();
-    const label = turn.reasoningEl.querySelector('.reasoning-label');
-    label.textContent = 'Thought for ' + fmtTime(Date.now());
-  }
+function endReasoning(block) {
+  if (!block || !block.bodyEl) return;
+  const pulse = block.el.querySelector('.pulse');
+  if (pulse) pulse.remove();
+  const label = block.el.querySelector('.reasoning-label');
+  if (label) label.textContent = 'Thought for ' + fmtTime(Date.now());
 }
 
 function toolCard(turn, id, name) {
@@ -489,6 +491,7 @@ function toolCard(turn, id, name) {
     });
     turn.body.appendChild(card);
     turn.tools.set(id, card);
+    turn.blocks.push({ kind: 'tool', el: card });
   }
   card.querySelector('.tool-name').textContent = name;
   return card;
@@ -536,17 +539,21 @@ function renderTurnMeta(turn) {
 function finishTurn() {
   const turn = state.activeTurn;
   if (!turn) return;
-  if (turn.streamed === undefined && !turn.reasoningEl && turn.tools.size === 0 && !turn.error) {
-    turn.content.innerHTML = '<div class="empty-stream">The model returned an empty response.</div>';
+  if (turn.blocks.length === 0 && !turn.error) {
+    const block = appendBlock(turn, 'text');
+    block.el.innerHTML = '<div class="empty-stream">The model returned an empty response.</div>';
   }
-  if (turn.streamed !== undefined) {
-    if (turn.renderTimer) {
-      clearTimeout(turn.renderTimer);
-      turn.renderTimer = null;
+  turn.blocks.forEach(block => {
+    if (block.kind === 'text' && block.mdEl) {
+      if (block.renderTimer) {
+        clearTimeout(block.renderTimer);
+        block.renderTimer = null;
+      }
+      renderStreamNow(block);
+    } else if (block.kind === 'reasoning') {
+      endReasoning(block);
     }
-    renderStreamNow(turn);
-  }
-  endReasoning();
+  });
   renderTurnMeta(turn);
   if (turn.error) {
     const err = document.createElement('div');
@@ -578,9 +585,6 @@ const handlers = {
 
   stream(p) {
     const turn = state.activeTurn || newTurn();
-    if (turn.streamed === undefined && turn.reasoningOpen === undefined) {
-      turn.content.innerHTML = '<div class="empty-stream"></div>';
-    }
     appendStream(p.text, true);
   },
 
@@ -597,12 +601,6 @@ const handlers = {
     if (p.args) renderToolArgs(card, p.args);
     if (p.display) card.querySelector('.tool-name').textContent = p.display;
     setToolState(card, 'running');
-    if (turn.streamed === undefined && !turn.content.innerHTML) {
-      turn.content.innerHTML = '<div class="empty-stream"></div>';
-    }
-    if (turn.content.querySelector('.empty-stream')) {
-      turn.content.querySelector('.empty-stream').classList.add('hidden');
-    }
   },
 
   'tool:args'(p) {
@@ -628,10 +626,14 @@ const handlers = {
 
   iter(p) {
     const turn = state.activeTurn;
-    if (turn) {
-      turn.lastIter = p;
-      const label = turn.el.querySelector('.tool-state-label');
-      if (label) label.textContent = 'step ' + (p.step || '');
+    if (!turn) return;
+    turn.lastIter = p;
+    for (let i = turn.blocks.length - 1; i >= 0; i--) {
+      if (turn.blocks[i].kind === 'tool') {
+        const label = turn.blocks[i].el.querySelector('.tool-state-label');
+        if (label) label.textContent = 'step ' + (p.n || p.step || '');
+        break;
+      }
     }
   },
 
@@ -863,8 +865,9 @@ function renderTranscript(items) {
         });
         turn.body.appendChild(wrap);
       }
-      if (!m.text) {
-        turn.content.innerHTML = '<div class="empty-stream"></div>';
+      if (!m.text && !tools.length) {
+        const block = appendBlock(turn, 'text');
+        block.el.innerHTML = '<div class="empty-stream"></div>';
       }
       finishTurn();
     }

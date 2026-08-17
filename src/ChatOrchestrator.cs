@@ -6,6 +6,8 @@ namespace TerminalAiAssistant;
 
 public static class ChatOrchestrator
 {
+    private static int ToolCallSeq;
+
     public static async Task Run(ChatSession session, string prompt, CancellationToken cancellationToken = default)
     {
         SessionContext.Current = session;
@@ -332,15 +334,15 @@ public static class ChatOrchestrator
 
     private static void FlushUi(StringBuilder streamBuffer, StringBuilder reasoningBuffer)
     {
-        if (streamBuffer.Length > 0)
-        {
-            AppUi.Send("stream", new { text = streamBuffer.ToString() });
-            streamBuffer.Clear();
-        }
         if (reasoningBuffer.Length > 0)
         {
             AppUi.Send("reasoning", new { text = reasoningBuffer.ToString() });
             reasoningBuffer.Clear();
+        }
+        if (streamBuffer.Length > 0)
+        {
+            AppUi.Send("stream", new { text = streamBuffer.ToString() });
+            streamBuffer.Clear();
         }
     }
 
@@ -365,11 +367,12 @@ public static class ChatOrchestrator
         accumulatedToolCalls[index] = new ToolCallAccumulator
         {
             Id = toolUpdate.ToolCallId ?? "",
+            UiId = "call-" + Interlocked.Increment(ref ToolCallSeq),
             FunctionName = toolUpdate.FunctionName ?? "",
             ExtraContent = GetToolCallExtraContent(toolUpdate)
         };
         if (!string.IsNullOrEmpty(toolUpdate.FunctionName))
-            DisplayToolName(toolUpdate.FunctionName, index);
+            DisplayToolName(toolUpdate.FunctionName, accumulatedToolCalls[index].UiId);
     }
 
     private static void UpdateExistingToolCall(StreamingChatToolCallUpdate toolUpdate, ToolCallAccumulator acc, int index)
@@ -386,19 +389,19 @@ public static class ChatOrchestrator
             bool wasEmpty = string.IsNullOrEmpty(acc.FunctionName);
             acc.FunctionName = toolUpdate.FunctionName;
             if (wasEmpty)
-                DisplayToolName(toolUpdate.FunctionName, index);
+                DisplayToolName(toolUpdate.FunctionName, acc.UiId);
         }
 
         if (toolUpdate.FunctionArgumentsUpdate != null && toolUpdate.FunctionArgumentsUpdate.ToMemory().Length > 0)
         {
             acc.Arguments += toolUpdate.FunctionArgumentsUpdate.ToString();
-            AppUi.Send("tool:args", new { id = $"call-{index}", args = toolUpdate.FunctionArgumentsUpdate.ToString() });
+            AppUi.Send("tool:args", new { id = acc.UiId, args = toolUpdate.FunctionArgumentsUpdate.ToString() });
         }
     }
 
-    private static void DisplayToolName(string functionName, int index)
+    private static void DisplayToolName(string functionName, string uiId)
     {
-        AppUi.Send("tool:start", new { id = $"call-{index}", name = functionName });
+        AppUi.Send("tool:start", new { id = uiId, name = functionName });
     }
 
     internal static string? ExtractPrimaryArg(string functionName, string json)
@@ -430,14 +433,15 @@ public static class ChatOrchestrator
         int contextWindowSize,
         CancellationToken cancellationToken)
     {
-        var assistantToolCalls = accumulatedToolCalls.Values
-            .Select(acc =>
-            {
-                var toolCall = ChatToolCall.CreateFunctionToolCall(acc.Id, acc.FunctionName, BinaryData.FromString(acc.Arguments));
-                AttachToolCallExtraContent(toolCall, acc.ExtraContent);
-                return toolCall;
-            })
-            .ToList();
+        var assistantToolCalls = new List<ChatToolCall>();
+        var uiIds = new List<string>();
+        foreach (var acc in accumulatedToolCalls.Values)
+        {
+            var toolCall = ChatToolCall.CreateFunctionToolCall(acc.Id, acc.FunctionName, BinaryData.FromString(acc.Arguments));
+            AttachToolCallExtraContent(toolCall, acc.ExtraContent);
+            assistantToolCalls.Add(toolCall);
+            uiIds.Add(acc.UiId);
+        }
 
         messages.Add(new AssistantChatMessage(assistantToolCalls));
 
@@ -449,7 +453,7 @@ public static class ChatOrchestrator
             if (result != null)
             {
                 toolResultMessages.Add(result);
-                LogToolResult(toolCall, result, i);
+                LogToolResult(toolCall, result, uiIds[i]);
             }
         }
 
@@ -458,7 +462,7 @@ public static class ChatOrchestrator
         return await ContextManager.TruncateMessagesAsync(messages, GetMessageBudget(contextWindowSize), cancellationToken);
     }
 
-    private static void LogToolResult(ChatToolCall toolCall, ChatMessage result, int streamIndex)
+    private static void LogToolResult(ChatToolCall toolCall, ChatMessage result, string uiId)
     {
         if (result is not ToolChatMessage toolMsg)
             return;
@@ -469,7 +473,7 @@ public static class ChatOrchestrator
 
         AppUi.Send("tool:end", new
         {
-            id = $"call-{streamIndex}",
+            id = uiId,
             name = toolCall.FunctionName,
             args = fullArgs,
             result = content,
@@ -643,6 +647,7 @@ public static class ChatOrchestrator
 public class ToolCallAccumulator
 {
     public string Id { get; set; } = "";
+    public string UiId { get; set; } = "";
     public string FunctionName { get; set; } = "";
     public string Arguments { get; set; } = "";
     public BinaryData? ExtraContent { get; set; }
